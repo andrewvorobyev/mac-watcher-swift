@@ -17,16 +17,10 @@ struct WatcherMain {
         let pid = pid_t(pidValue)
 
         let collector = AccessibilityTreeCollector()
-        let renderer: AccessibilityTreeRenderer = YAMLAccessibilityTreeRenderer(configuration: .llm)
 
         do {
             let tree = try collector.collectTree(for: pid)
-            let data = try renderer.render(node: tree)
-
-            let fileURL = try prepareOutputURL(for: pid)
-            try data.write(to: fileURL)
-
-            print("Accessibility tree saved to \(fileURL.path)")
+            try renderVariants(for: pid, tree: tree)
         } catch let error as AccessibilityCollectorError {
             logError(error.description)
             exit(EXIT_FAILURE)
@@ -36,7 +30,24 @@ struct WatcherMain {
         }
     }
 
-    private static func prepareOutputURL(for pid: pid_t) throws -> URL {
+    private static func renderVariants(for pid: pid_t, tree: AccessibilityNode) throws {
+        let variants: [(name: String, configuration: YAMLAccessibilityTreeRenderer.Configuration)] = [
+            ("llm", .llm),
+            ("all", .all)
+        ]
+
+        for (name, configuration) in variants {
+            let renderer = YAMLAccessibilityTreeRenderer(configuration: configuration)
+            let data = try renderer.render(node: tree)
+
+            let fileURL = try prepareOutputURL(for: pid, variant: name)
+            try data.write(to: fileURL)
+
+            print("Accessibility tree (\(name)) saved to \(fileURL.path)")
+        }
+    }
+
+    private static func prepareOutputURL(for pid: pid_t, variant: String) throws -> URL {
         let fileManager = FileManager.default
         let outputDirectory = URL(fileURLWithPath: fileManager.currentDirectoryPath)
             .appendingPathComponent("output", isDirectory: true)
@@ -45,7 +56,7 @@ struct WatcherMain {
             try fileManager.createDirectory(at: outputDirectory, withIntermediateDirectories: true)
         }
 
-        return outputDirectory.appendingPathComponent("\(pid).yaml")
+        return outputDirectory.appendingPathComponent("\(pid)-\(variant).yaml")
     }
 
     private static func logError(_ message: String) {

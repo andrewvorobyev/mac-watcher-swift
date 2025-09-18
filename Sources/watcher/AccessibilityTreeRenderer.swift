@@ -6,99 +6,78 @@ protocol AccessibilityTreeRenderer {
 
 final class YAMLAccessibilityTreeRenderer: AccessibilityTreeRenderer {
     struct Configuration {
-        let attributeAllowList: Set<String>?
+        enum Mode {
+            case llm(LLMOptions)
+            case all
+        }
+
+        struct LLMOptions {
+            let roleKeys: [String]
+            let textKeys: [String]
+            let identifierKeys: [String]
+            let positionKey: String?
+            let sizeKey: String?
+            let enabledKeys: [String]
+            let focusedKeys: [String]
+            let dropGroupRoles: Bool
+            let emitEnabledOnlyWhenFalse: Bool
+            let emitFocusedOnlyWhenTrue: Bool
+        }
+
+        let mode: Mode
         let includeOnlyTextNodesAndAncestors: Bool
         let pruneAttributeLessLeaves: Bool
-        let dropGroupRoleValues: Bool
-        let dropRoleDescriptions: Bool
-        let dropSubrole: Bool
-        let dropFrameAttributes: Bool
-        let emitEnabledOnlyWhenFalse: Bool
-        let emitFocusedOnlyWhenTrue: Bool
 
-        static let llm: Configuration = {
-            let allowList = Set([
-                "axrole",
-                "axidentifier",
-                "axtitle",
-                "axlabel",
-                "axvalue",
-                "axdescription",
-                "axhelp",
-                "axplaceholdervalue",
-                "axenabled",
-                "axfocused",
-                "identifier",
-                "title",
-                "label",
-                "value",
-                "description",
-                "help",
-                "placeholder",
-                "enabled",
-                "focused"
-            ].map { $0.lowercased() })
-
-            return Configuration(
-                attributeAllowList: allowList,
-                includeOnlyTextNodesAndAncestors: false,
-                pruneAttributeLessLeaves: true,
-                dropGroupRoleValues: true,
-                dropRoleDescriptions: true,
-                dropSubrole: true,
-                dropFrameAttributes: true,
-                emitEnabledOnlyWhenFalse: true,
-                emitFocusedOnlyWhenTrue: true
-            )
-        }()
+        static let llm: Configuration = Configuration(
+            mode: .llm(
+                LLMOptions(
+                    roleKeys: ["AXRole"],
+                    textKeys: [
+                        "AXValue",
+                        "AXTitle",
+                        "AXLabel",
+                        "AXPlaceholderValue",
+                        "AXDescription",
+                        "AXHelp"
+                    ],
+                    identifierKeys: ["AXIdentifier"],
+                    positionKey: "AXPosition",
+                    sizeKey: "AXSize",
+                    enabledKeys: ["AXEnabled"],
+                    focusedKeys: ["AXFocused"],
+                    dropGroupRoles: true,
+                    emitEnabledOnlyWhenFalse: true,
+                    emitFocusedOnlyWhenTrue: true
+                )
+            ),
+            includeOnlyTextNodesAndAncestors: false,
+            pruneAttributeLessLeaves: true
+        )
 
         static let all: Configuration = Configuration(
-            attributeAllowList: nil,
+            mode: .all,
             includeOnlyTextNodesAndAncestors: false,
-            pruneAttributeLessLeaves: false,
-            dropGroupRoleValues: false,
-            dropRoleDescriptions: false,
-            dropSubrole: false,
-            dropFrameAttributes: false,
-            emitEnabledOnlyWhenFalse: false,
-            emitFocusedOnlyWhenTrue: false
+            pruneAttributeLessLeaves: false
         )
 
         var requiresAttributeFiltering: Bool {
-            attributeAllowList != nil ||
-                dropGroupRoleValues ||
-                dropRoleDescriptions ||
-                dropSubrole ||
-                dropFrameAttributes ||
-                emitEnabledOnlyWhenFalse ||
-                emitFocusedOnlyWhenTrue
+            switch mode {
+            case .all:
+                return false
+            case .llm:
+                return true
+            }
         }
 
         var requiresProcessing: Bool {
-            requiresAttributeFiltering ||
-                includeOnlyTextNodesAndAncestors ||
-                pruneAttributeLessLeaves
+            return requiresAttributeFiltering || includeOnlyTextNodesAndAncestors || pruneAttributeLessLeaves
         }
     }
 
     private let configuration: Configuration
 
     init(configuration: Configuration) {
-        if let allowList = configuration.attributeAllowList {
-            self.configuration = Configuration(
-                attributeAllowList: Set(allowList.map { $0.lowercased() }),
-                includeOnlyTextNodesAndAncestors: configuration.includeOnlyTextNodesAndAncestors,
-                pruneAttributeLessLeaves: configuration.pruneAttributeLessLeaves,
-                dropGroupRoleValues: configuration.dropGroupRoleValues,
-                dropRoleDescriptions: configuration.dropRoleDescriptions,
-                dropSubrole: configuration.dropSubrole,
-                dropFrameAttributes: configuration.dropFrameAttributes,
-                emitEnabledOnlyWhenFalse: configuration.emitEnabledOnlyWhenFalse,
-                emitFocusedOnlyWhenTrue: configuration.emitFocusedOnlyWhenTrue
-            )
-        } else {
-            self.configuration = configuration
-        }
+        self.configuration = configuration
     }
 
     func render(node: AccessibilityNode) throws -> Data {
@@ -142,62 +121,109 @@ final class YAMLAccessibilityTreeRenderer: AccessibilityTreeRenderer {
     }
 
     private func filterAttributes(_ attributes: [String: String]) -> [String: String] {
-        var result: [String: String] = [:]
+        switch configuration.mode {
+        case .all:
+            return attributes
+        case .llm(let options):
+            var result: [String: String] = [:]
 
-        for (key, value) in attributes {
-            let trimmed = value.trimmingCharacters(in: .whitespacesAndNewlines)
-            guard !trimmed.isEmpty else { continue }
-
-            let normalizedKey = key.lowercased()
-
-            if let allowList = configuration.attributeAllowList, !allowList.contains(normalizedKey) {
-                continue
+            if let role = firstMatch(in: attributes, keys: options.roleKeys), !shouldDrop(role: role, dropGroupRoles: options.dropGroupRoles) {
+                result["role"] = role
             }
 
-            if configuration.dropSubrole && (normalizedKey == "axsubrole" || normalizedKey == "subrole") {
-                continue
+            if let identifier = firstMatch(in: attributes, keys: options.identifierKeys) {
+                result["identifier"] = identifier
             }
 
-            if configuration.dropRoleDescriptions && (normalizedKey == "axroledescription" || normalizedKey == "roledescription") {
-                continue
+            if let text = aggregateText(from: attributes, keys: options.textKeys) {
+                result["text"] = text
             }
 
-            if configuration.dropGroupRoleValues && (normalizedKey == "axrole" || normalizedKey == "role") {
-                if trimmed.caseInsensitiveCompare("axgroup") == .orderedSame || trimmed.caseInsensitiveCompare("group") == .orderedSame {
-                    continue
+            if let positionKey = options.positionKey,
+               let rawPosition = value(for: positionKey, in: attributes),
+               let coordinates = parseNumbers(from: rawPosition, expectedCount: 2) {
+                result["x"] = formatNumber(coordinates[0])
+                result["y"] = formatNumber(coordinates[1])
+            }
+
+            if let sizeKey = options.sizeKey,
+               let rawSize = value(for: sizeKey, in: attributes),
+               let sizeValues = parseNumbers(from: rawSize, expectedCount: 2) {
+                result["width"] = formatNumber(sizeValues[0])
+                result["height"] = formatNumber(sizeValues[1])
+            }
+
+            if let enabled = booleanValue(in: attributes, keys: options.enabledKeys) {
+                if enabled {
+                    if !options.emitEnabledOnlyWhenFalse {
+                        result["enabled"] = "true"
+                    }
+                } else {
+                    result["enabled"] = "false"
                 }
             }
 
-            if configuration.dropFrameAttributes && (normalizedKey == "axframe" || normalizedKey == "frame") {
-                continue
+            if let focused = booleanValue(in: attributes, keys: options.focusedKeys) {
+                if focused {
+                    result["focused"] = "true"
+                } else if !options.emitFocusedOnlyWhenTrue {
+                    result["focused"] = "false"
+                }
             }
 
-            guard let normalizedValue = normalizeValue(for: normalizedKey, value: trimmed) else {
-                continue
-            }
-
-            result[key] = normalizedValue
+            return result
         }
-
-        return result
     }
 
-    private func normalizeValue(for normalizedKey: String, value: String) -> String? {
-        if configuration.emitEnabledOnlyWhenFalse && (normalizedKey == "axenabled" || normalizedKey == "enabled") {
-            guard let boolValue = parseBoolean(value) else { return nil }
-            return boolValue ? nil : "false"
-        }
+    private func shouldDrop(role: String, dropGroupRoles: Bool) -> Bool {
+        guard dropGroupRoles else { return false }
+        return role.caseInsensitiveCompare("AXGroup") == .orderedSame || role.caseInsensitiveCompare("group") == .orderedSame
+    }
 
-        if configuration.emitFocusedOnlyWhenTrue && (normalizedKey == "axfocused" || normalizedKey == "focused") {
-            guard let boolValue = parseBoolean(value) else { return nil }
-            return boolValue ? "true" : nil
+    private func firstMatch(in attributes: [String: String], keys: [String]) -> String? {
+        for key in keys {
+            if let value = value(for: key, in: attributes) {
+                let trimmed = value.trimmingCharacters(in: .whitespacesAndNewlines)
+                if !trimmed.isEmpty {
+                    return trimmed
+                }
+            }
         }
+        return nil
+    }
 
-        return value
+    private func value(for key: String, in attributes: [String: String]) -> String? {
+        for (attributeKey, value) in attributes {
+            if attributeKey.compare(key, options: [.caseInsensitive]) == .orderedSame {
+                return value
+            }
+        }
+        return nil
+    }
+
+    private func aggregateText(from attributes: [String: String], keys: [String]) -> String? {
+        var parts: [String] = []
+        for key in keys {
+            if let rawValue = value(for: key, in: attributes) {
+                let trimmed = rawValue.trimmingCharacters(in: .whitespacesAndNewlines)
+                if !trimmed.isEmpty {
+                    parts.append(trimmed)
+                }
+            }
+        }
+        guard !parts.isEmpty else { return nil }
+        let joined = parts.joined(separator: " ")
+        let condensed = joined.replacingOccurrences(of: "\\s+", with: " ", options: .regularExpression)
+        return condensed.trimmingCharacters(in: .whitespacesAndNewlines)
+    }
+
+    private func booleanValue(in attributes: [String: String], keys: [String]) -> Bool? {
+        guard let raw = firstMatch(in: attributes, keys: keys) else { return nil }
+        return parseBoolean(raw)
     }
 
     private func parseBoolean(_ value: String) -> Bool? {
-        let lowercased = value.lowercased()
+        let lowercased = value.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
         if ["true", "1", "yes"].contains(lowercased) {
             return true
         }
@@ -207,18 +233,56 @@ final class YAMLAccessibilityTreeRenderer: AccessibilityTreeRenderer {
         return nil
     }
 
+    private func parseNumbers(from string: String, expectedCount: Int) -> [Double]? {
+        let pattern = "-?\\d+(?:\\.\\d+)?"
+        guard let regex = try? NSRegularExpression(pattern: pattern, options: []) else {
+            return nil
+        }
+
+        let matches = regex.matches(in: string, range: NSRange(string.startIndex..., in: string))
+        var values: [Double] = []
+        values.reserveCapacity(expectedCount)
+
+        for match in matches {
+            guard let range = Range(match.range, in: string) else { continue }
+            let substring = String(string[range])
+            if let number = Double(substring) {
+                values.append(number)
+                if values.count == expectedCount {
+                    break
+                }
+            }
+        }
+
+        guard values.count == expectedCount else { return nil }
+        return values
+    }
+
+    private func formatNumber(_ value: Double) -> String {
+        let rounded = value.rounded()
+        if abs(rounded - value) < 0.0001 {
+            return String(Int(rounded))
+        }
+
+        var string = String(format: "%.3f", value)
+        while string.contains(".") && (string.hasSuffix("0") || string.hasSuffix(".")) {
+            string.removeLast()
+        }
+        return string
+    }
+
     private func nodeContainsText(attributes: [String: String]) -> Bool {
         for (key, value) in attributes {
             let trimmed = value.trimmingCharacters(in: .whitespacesAndNewlines)
             guard !trimmed.isEmpty else { continue }
 
             let lowerKey = key.lowercased()
-            if lowerKey.contains("value") ||
+            if lowerKey.contains("text") ||
+                lowerKey.contains("value") ||
                 lowerKey.contains("title") ||
                 lowerKey.contains("label") ||
                 lowerKey.contains("description") ||
-                lowerKey.contains("placeholder") ||
-                lowerKey.contains("text") {
+                lowerKey.contains("placeholder") {
                 return true
             }
         }

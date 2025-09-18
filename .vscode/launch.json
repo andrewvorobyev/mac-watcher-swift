@@ -1,0 +1,22 @@
+{
+    "configurations": [
+        {
+            "type": "swift",
+            "request": "launch",
+            "args": [],
+            "cwd": "${workspaceFolder:mac-watcher-swift}",
+            "name": "Debug watcher",
+            "program": "${workspaceFolder:mac-watcher-swift}/.build/debug/watcher",
+            "preLaunchTask": "swift: Build Debug watcher"
+        },
+        {
+            "type": "swift",
+            "request": "launch",
+            "args": [],
+            "cwd": "${workspaceFolder:mac-watcher-swift}",
+            "name": "Release watcher",
+            "program": "${workspaceFolder:mac-watcher-swift}/.build/release/watcher",
+            "preLaunchTask": "swift: Build Release watcher"
+        }
+    ]
+}

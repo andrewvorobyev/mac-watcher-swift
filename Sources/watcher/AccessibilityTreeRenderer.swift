@@ -27,6 +27,7 @@ final class YAMLAccessibilityTreeRenderer: AccessibilityTreeRenderer {
         let mode: Mode
         let includeOnlyTextNodesAndAncestors: Bool
         let pruneAttributeLessLeaves: Bool
+        let stripAttributesFromStructureNodes: Bool
 
         static let llm: Configuration = Configuration(
             mode: .llm(
@@ -51,13 +52,15 @@ final class YAMLAccessibilityTreeRenderer: AccessibilityTreeRenderer {
                 )
             ),
             includeOnlyTextNodesAndAncestors: false,
-            pruneAttributeLessLeaves: true
+            pruneAttributeLessLeaves: true,
+            stripAttributesFromStructureNodes: true
         )
 
         static let all: Configuration = Configuration(
             mode: .all,
             includeOnlyTextNodesAndAncestors: false,
-            pruneAttributeLessLeaves: false
+            pruneAttributeLessLeaves: false,
+            stripAttributesFromStructureNodes: false
         )
 
         var requiresAttributeFiltering: Bool {
@@ -70,7 +73,7 @@ final class YAMLAccessibilityTreeRenderer: AccessibilityTreeRenderer {
         }
 
         var requiresProcessing: Bool {
-            return requiresAttributeFiltering || includeOnlyTextNodesAndAncestors || pruneAttributeLessLeaves
+            return requiresAttributeFiltering || includeOnlyTextNodesAndAncestors || pruneAttributeLessLeaves || stripAttributesFromStructureNodes
         }
     }
 
@@ -99,11 +102,15 @@ final class YAMLAccessibilityTreeRenderer: AccessibilityTreeRenderer {
     private func process(node: AccessibilityNode) -> AccessibilityNode? {
         let processedChildren = node.children.compactMap { process(node: $0) }
 
-        let attributes: [String: String]
+        var attributes: [String: String]
         if configuration.requiresAttributeFiltering {
             attributes = filterAttributes(node.attributes)
         } else {
             attributes = node.attributes
+        }
+
+        if configuration.stripAttributesFromStructureNodes && isStructureNode(attributes: attributes) {
+            attributes = [:]
         }
 
         if configuration.includeOnlyTextNodesAndAncestors {
@@ -287,6 +294,11 @@ final class YAMLAccessibilityTreeRenderer: AccessibilityTreeRenderer {
             }
         }
         return false
+    }
+
+    private func isStructureNode(attributes: [String: String]) -> Bool {
+        let keys = attributes.keys.map { $0.lowercased() }
+        return !keys.contains("role") && !keys.contains("text")
     }
 
     private func nodeValue(_ node: AccessibilityNode) -> YAMLValue {

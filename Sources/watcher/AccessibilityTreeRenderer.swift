@@ -92,7 +92,7 @@ final class YAMLAccessibilityTreeRenderer: AccessibilityTreeRenderer {
         }
 
         let rootValue: YAMLValue = .dictionary([
-            "accessibilityTree": nodeValue(processedNode)
+            "accessibilityTree": nodeValue(processedNode, configuration: configuration)
         ])
         let lines = serialize(rootValue, indentLevel: 0)
         let yaml = lines.joined(separator: "\n") + "\n"
@@ -143,19 +143,19 @@ final class YAMLAccessibilityTreeRenderer: AccessibilityTreeRenderer {
             }
 
             if let text = aggregateText(from: attributes, keys: options.textKeys) {
-                result["text"] = text
+                result["text"] = summarizeText(text)
             }
 
             if let positionKey = options.positionKey,
                let rawPosition = value(for: positionKey, in: attributes),
-               let coordinates = parseNumbers(from: rawPosition, expectedCount: 2) {
+               let coordinates = parseNamedValues(["x", "y"], from: rawPosition) {
                 result["x"] = formatNumber(coordinates[0])
                 result["y"] = formatNumber(coordinates[1])
             }
 
             if let sizeKey = options.sizeKey,
                let rawSize = value(for: sizeKey, in: attributes),
-               let sizeValues = parseNumbers(from: rawSize, expectedCount: 2) {
+               let sizeValues = parseNamedValues(["w", "h"], from: rawSize) {
                 result["width"] = formatNumber(sizeValues[0])
                 result["height"] = formatNumber(sizeValues[1])
             }
@@ -220,7 +220,28 @@ final class YAMLAccessibilityTreeRenderer: AccessibilityTreeRenderer {
         }
         guard !parts.isEmpty else { return nil }
         let joined = parts.joined(separator: " ")
-        let condensed = joined.replacingOccurrences(of: "\\s+", with: " ", options: .regularExpression)
+        return condenseWhitespace(in: joined)
+    }
+
+    private func summarizeText(_ text: String) -> String {
+        let condensed = condenseWhitespace(in: text)
+        let limit = 180
+        guard condensed.count > limit else { return condensed }
+
+        let index = condensed.index(condensed.startIndex, offsetBy: limit)
+        var snippet = String(condensed[..<index])
+        snippet = snippet.trimmingCharacters(in: .whitespacesAndNewlines)
+        let remaining = max(condensed.count - snippet.count, 0)
+
+        if remaining == 0 {
+            return snippet
+        }
+
+        return "\(snippet)… (+\(remaining) chars)"
+    }
+
+    private func condenseWhitespace(in text: String) -> String {
+        let condensed = text.replacingOccurrences(of: "\\s+", with: " ", options: .regularExpression)
         return condensed.trimmingCharacters(in: .whitespacesAndNewlines)
     }
 
@@ -240,29 +261,61 @@ final class YAMLAccessibilityTreeRenderer: AccessibilityTreeRenderer {
         return nil
     }
 
-    private func parseNumbers(from string: String, expectedCount: Int) -> [Double]? {
-        let pattern = "-?\\d+(?:\\.\\d+)?"
-        guard let regex = try? NSRegularExpression(pattern: pattern, options: []) else {
+    private func parseNamedValues(_ keys: [String], from raw: String) -> [Double]? {
+        let segment = numericSegment(from: raw)
+        guard !segment.isEmpty else { return nil }
+
+        var values: [Double] = []
+        values.reserveCapacity(keys.count)
+
+        for key in keys {
+            guard let value = extractValue(for: key, in: segment) else {
+                return nil
+            }
+            values.append(value)
+        }
+
+        return values
+    }
+
+    private func numericSegment(from raw: String) -> String {
+        guard let openBrace = raw.firstIndex(of: "{"),
+              let closeBrace = raw.lastIndex(of: "}") else {
+            return raw
+        }
+
+        var segment = String(raw[raw.index(after: openBrace)..<closeBrace])
+
+        if let typeRange = segment.range(of: "type", options: [.caseInsensitive]) {
+            segment = String(segment[..<typeRange.lowerBound])
+        }
+
+        if let valueRange = segment.range(of: "value", options: [.caseInsensitive]) {
+            var remainder = String(segment[valueRange.upperBound...])
+            if let equalsRange = remainder.range(of: "=") {
+                remainder = String(remainder[equalsRange.upperBound...])
+            }
+            segment = remainder
+        }
+
+        return segment.trimmingCharacters(in: .whitespacesAndNewlines)
+    }
+
+    private func extractValue(for key: String, in segment: String) -> Double? {
+        let escapedKey = NSRegularExpression.escapedPattern(for: key)
+        let pattern = "(?:^|[\\s,])\(escapedKey)\\s*:\\s*(-?\\d+(?:\\.\\d+)?)"
+        guard let regex = try? NSRegularExpression(pattern: pattern, options: [.caseInsensitive]) else {
             return nil
         }
 
-        let matches = regex.matches(in: string, range: NSRange(string.startIndex..., in: string))
-        var values: [Double] = []
-        values.reserveCapacity(expectedCount)
-
-        for match in matches {
-            guard let range = Range(match.range, in: string) else { continue }
-            let substring = String(string[range])
-            if let number = Double(substring) {
-                values.append(number)
-                if values.count == expectedCount {
-                    break
-                }
-            }
+        let searchRange = NSRange(segment.startIndex..., in: segment)
+        guard let match = regex.firstMatch(in: segment, options: [], range: searchRange),
+              match.numberOfRanges >= 2,
+              let valueRange = Range(match.range(at: 1), in: segment) else {
+            return nil
         }
 
-        guard values.count == expectedCount else { return nil }
-        return values
+        return Double(segment[valueRange])
     }
 
     private func formatNumber(_ value: Double) -> String {
@@ -301,7 +354,16 @@ final class YAMLAccessibilityTreeRenderer: AccessibilityTreeRenderer {
         return !keys.contains("role") && !keys.contains("text")
     }
 
-    private func nodeValue(_ node: AccessibilityNode) -> YAMLValue {
+    private func nodeValue(_ node: AccessibilityNode, configuration: Configuration) -> YAMLValue {
+        switch configuration.mode {
+        case .all:
+            return nodeValueAll(node, configuration: configuration)
+        case .llm:
+            return nodeValueLLM(node, configuration: configuration)
+        }
+    }
+
+    private func nodeValueAll(_ node: AccessibilityNode, configuration: Configuration) -> YAMLValue {
         var map: [String: YAMLValue] = [:]
 
         if !node.attributes.isEmpty {
@@ -313,11 +375,48 @@ final class YAMLAccessibilityTreeRenderer: AccessibilityTreeRenderer {
         }
 
         if !node.children.isEmpty {
-            let values = node.children.map { nodeValue($0) }
+            let values = node.children.map { nodeValue($0, configuration: configuration) }
             map["children"] = .array(values)
         }
 
         return .dictionary(map)
+    }
+
+    private func nodeValueLLM(_ node: AccessibilityNode, configuration: Configuration) -> YAMLValue {
+        var map: [String: YAMLValue] = [:]
+
+        if !node.attributes.isEmpty {
+            for key in orderedAttributeKeys(node.attributes) {
+                if let value = node.attributes[key] {
+                    map[key] = .string(value)
+                }
+            }
+        }
+
+        if !node.children.isEmpty {
+            let values = node.children.map { nodeValue($0, configuration: configuration) }
+            map["children"] = .array(values)
+        }
+
+        return .dictionary(map)
+    }
+
+    private func orderedAttributeKeys(_ attributes: [String: String]) -> [String] {
+        let priority = ["role", "text", "identifier", "focused", "enabled", "x", "y", "width", "height"]
+        var seen: Set<String> = []
+        var ordered: [String] = []
+
+        for key in priority where attributes[key] != nil {
+            ordered.append(key)
+            seen.insert(key)
+        }
+
+        let remaining = attributes.keys
+            .filter { !seen.contains($0) }
+            .sorted { $0.localizedCaseInsensitiveCompare($1) == .orderedAscending }
+
+        ordered.append(contentsOf: remaining)
+        return ordered
     }
 
     private func serialize(_ value: YAMLValue, indentLevel: Int) -> [String] {

@@ -17,7 +17,7 @@ struct WatcherMain {
         let pid = pid_t(pidValue)
 
         let collector = AccessibilityTreeCollector()
-        let renderer: AccessibilityTreeRenderer = RendererForLLM()
+        let renderer: AccessibilityTreeRenderer = YAMLAccessibilityTreeRenderer(configuration: .llm)
 
         do {
             let tree = try collector.collectTree(for: pid)

@@ -4,62 +4,211 @@ protocol AccessibilityTreeRenderer {
     func render(node: AccessibilityNode) throws -> Data
 }
 
-final class XMLAccessibilityTreeRenderer: AccessibilityTreeRenderer {
-    private let includeOnlyTextNodesAndAncestors: Bool
+final class YAMLAccessibilityTreeRenderer: AccessibilityTreeRenderer {
+    struct Configuration {
+        let attributeAllowList: Set<String>?
+        let includeOnlyTextNodesAndAncestors: Bool
+        let pruneAttributeLessLeaves: Bool
+        let dropGroupRoleValues: Bool
+        let dropRoleDescriptions: Bool
+        let dropSubrole: Bool
+        let dropFrameAttributes: Bool
+        let emitEnabledOnlyWhenFalse: Bool
+        let emitFocusedOnlyWhenTrue: Bool
 
-    init(includeOnlyTextNodesAndAncestors: Bool = false) {
-        self.includeOnlyTextNodesAndAncestors = includeOnlyTextNodesAndAncestors
+        static let llm: Configuration = {
+            let allowList = Set([
+                "axrole",
+                "axidentifier",
+                "axtitle",
+                "axlabel",
+                "axvalue",
+                "axdescription",
+                "axhelp",
+                "axplaceholdervalue",
+                "axenabled",
+                "axfocused",
+                "identifier",
+                "title",
+                "label",
+                "value",
+                "description",
+                "help",
+                "placeholder",
+                "enabled",
+                "focused"
+            ].map { $0.lowercased() })
+
+            return Configuration(
+                attributeAllowList: allowList,
+                includeOnlyTextNodesAndAncestors: false,
+                pruneAttributeLessLeaves: true,
+                dropGroupRoleValues: true,
+                dropRoleDescriptions: true,
+                dropSubrole: true,
+                dropFrameAttributes: true,
+                emitEnabledOnlyWhenFalse: true,
+                emitFocusedOnlyWhenTrue: true
+            )
+        }()
+
+        static let all: Configuration = Configuration(
+            attributeAllowList: nil,
+            includeOnlyTextNodesAndAncestors: false,
+            pruneAttributeLessLeaves: false,
+            dropGroupRoleValues: false,
+            dropRoleDescriptions: false,
+            dropSubrole: false,
+            dropFrameAttributes: false,
+            emitEnabledOnlyWhenFalse: false,
+            emitFocusedOnlyWhenTrue: false
+        )
+
+        var requiresAttributeFiltering: Bool {
+            attributeAllowList != nil ||
+                dropGroupRoleValues ||
+                dropRoleDescriptions ||
+                dropSubrole ||
+                dropFrameAttributes ||
+                emitEnabledOnlyWhenFalse ||
+                emitFocusedOnlyWhenTrue
+        }
+
+        var requiresProcessing: Bool {
+            requiresAttributeFiltering ||
+                includeOnlyTextNodesAndAncestors ||
+                pruneAttributeLessLeaves
+        }
+    }
+
+    private let configuration: Configuration
+
+    init(configuration: Configuration) {
+        if let allowList = configuration.attributeAllowList {
+            self.configuration = Configuration(
+                attributeAllowList: Set(allowList.map { $0.lowercased() }),
+                includeOnlyTextNodesAndAncestors: configuration.includeOnlyTextNodesAndAncestors,
+                pruneAttributeLessLeaves: configuration.pruneAttributeLessLeaves,
+                dropGroupRoleValues: configuration.dropGroupRoleValues,
+                dropRoleDescriptions: configuration.dropRoleDescriptions,
+                dropSubrole: configuration.dropSubrole,
+                dropFrameAttributes: configuration.dropFrameAttributes,
+                emitEnabledOnlyWhenFalse: configuration.emitEnabledOnlyWhenFalse,
+                emitFocusedOnlyWhenTrue: configuration.emitFocusedOnlyWhenTrue
+            )
+        } else {
+            self.configuration = configuration
+        }
     }
 
     func render(node: AccessibilityNode) throws -> Data {
         let processedNode: AccessibilityNode
-        if includeOnlyTextNodesAndAncestors {
-            processedNode = filter(node: node) ?? AccessibilityNode(attributes: [:], children: [])
+        if configuration.requiresProcessing {
+            processedNode = process(node: node) ?? AccessibilityNode(attributes: [:], children: [])
         } else {
             processedNode = node
         }
 
-        var xml = "<?xml version=\"1.0\" encoding=\"UTF-8\"?>\n"
-        xml += render(node: processedNode, indentLevel: 0, isRoot: true)
-        return Data(xml.utf8)
+        let rootValue: YAMLValue = .dictionary([
+            "accessibilityTree": nodeValue(processedNode)
+        ])
+        let lines = serialize(rootValue, indentLevel: 0)
+        let yaml = lines.joined(separator: "\n") + "\n"
+        return Data(yaml.utf8)
     }
 
-    private func render(node: AccessibilityNode, indentLevel: Int, isRoot: Bool) -> String {
-        let indent = String(repeating: "  ", count: indentLevel)
-        let nodeName = isRoot ? "accessibilityTree" : "node"
-        var result = "\(indent)<\(nodeName)>\n"
+    private func process(node: AccessibilityNode) -> AccessibilityNode? {
+        let processedChildren = node.children.compactMap { process(node: $0) }
 
-        if !node.attributes.isEmpty {
-            result += "\(indent)  <attributes>\n"
-            for key in node.attributes.keys.sorted() {
-                let value = escapeXML(node.attributes[key] ?? "")
-                result += "\(indent)    <attribute name=\"\(escapeXML(key))\">\(value)</attribute>\n"
-            }
-            result += "\(indent)  </attributes>\n"
+        let attributes: [String: String]
+        if configuration.requiresAttributeFiltering {
+            attributes = filterAttributes(node.attributes)
+        } else {
+            attributes = node.attributes
         }
 
-        if !node.children.isEmpty {
-            result += "\(indent)  <children>\n"
-            for child in node.children {
-                result += render(node: child, indentLevel: indentLevel + 2, isRoot: false)
+        if configuration.includeOnlyTextNodesAndAncestors {
+            let hasText = nodeContainsText(attributes: attributes)
+            if !hasText && processedChildren.isEmpty {
+                return nil
             }
-            result += "\(indent)  </children>\n"
         }
 
-        result += "\(indent)</\(nodeName)>\n"
+        if configuration.pruneAttributeLessLeaves && attributes.isEmpty && processedChildren.isEmpty {
+            return nil
+        }
+
+        return AccessibilityNode(attributes: attributes, children: processedChildren)
+    }
+
+    private func filterAttributes(_ attributes: [String: String]) -> [String: String] {
+        var result: [String: String] = [:]
+
+        for (key, value) in attributes {
+            let trimmed = value.trimmingCharacters(in: .whitespacesAndNewlines)
+            guard !trimmed.isEmpty else { continue }
+
+            let normalizedKey = key.lowercased()
+
+            if let allowList = configuration.attributeAllowList, !allowList.contains(normalizedKey) {
+                continue
+            }
+
+            if configuration.dropSubrole && (normalizedKey == "axsubrole" || normalizedKey == "subrole") {
+                continue
+            }
+
+            if configuration.dropRoleDescriptions && (normalizedKey == "axroledescription" || normalizedKey == "roledescription") {
+                continue
+            }
+
+            if configuration.dropGroupRoleValues && (normalizedKey == "axrole" || normalizedKey == "role") {
+                if trimmed.caseInsensitiveCompare("axgroup") == .orderedSame || trimmed.caseInsensitiveCompare("group") == .orderedSame {
+                    continue
+                }
+            }
+
+            if configuration.dropFrameAttributes && (normalizedKey == "axframe" || normalizedKey == "frame") {
+                continue
+            }
+
+            guard let normalizedValue = normalizeValue(for: normalizedKey, value: trimmed) else {
+                continue
+            }
+
+            result[key] = normalizedValue
+        }
+
         return result
     }
 
-    private func filter(node: AccessibilityNode) -> AccessibilityNode? {
-        let filteredChildren = node.children.compactMap { filter(node: $0) }
-        if nodeContainsText(node) || !filteredChildren.isEmpty {
-            return AccessibilityNode(attributes: node.attributes, children: filteredChildren)
+    private func normalizeValue(for normalizedKey: String, value: String) -> String? {
+        if configuration.emitEnabledOnlyWhenFalse && (normalizedKey == "axenabled" || normalizedKey == "enabled") {
+            guard let boolValue = parseBoolean(value) else { return nil }
+            return boolValue ? nil : "false"
+        }
+
+        if configuration.emitFocusedOnlyWhenTrue && (normalizedKey == "axfocused" || normalizedKey == "focused") {
+            guard let boolValue = parseBoolean(value) else { return nil }
+            return boolValue ? "true" : nil
+        }
+
+        return value
+    }
+
+    private func parseBoolean(_ value: String) -> Bool? {
+        let lowercased = value.lowercased()
+        if ["true", "1", "yes"].contains(lowercased) {
+            return true
+        }
+        if ["false", "0", "no"].contains(lowercased) {
+            return false
         }
         return nil
     }
 
-    private func nodeContainsText(_ node: AccessibilityNode) -> Bool {
-        for (key, value) in node.attributes {
+    private func nodeContainsText(attributes: [String: String]) -> Bool {
+        for (key, value) in attributes {
             let trimmed = value.trimmingCharacters(in: .whitespacesAndNewlines)
             guard !trimmed.isEmpty else { continue }
 
@@ -74,39 +223,6 @@ final class XMLAccessibilityTreeRenderer: AccessibilityTreeRenderer {
             }
         }
         return false
-    }
-
-    private func escapeXML(_ string: String) -> String {
-        var escaped = ""
-        escaped.reserveCapacity(string.count)
-        for character in string {
-            switch character {
-            case "&":
-                escaped.append("&amp;")
-            case "\"":
-                escaped.append("&quot;")
-            case "'":
-                escaped.append("&apos;")
-            case "<":
-                escaped.append("&lt;")
-            case ">":
-                escaped.append("&gt;")
-            default:
-                escaped.append(character)
-            }
-        }
-        return escaped
-    }
-}
-
-final class YAMLAccessibilityTreeRenderer: AccessibilityTreeRenderer {
-    func render(node: AccessibilityNode) throws -> Data {
-        let rootValue: YAMLValue = .dictionary([
-            "accessibilityTree": nodeValue(node)
-        ])
-        let lines = serialize(rootValue, indentLevel: 0)
-        let yaml = lines.joined(separator: "\n") + "\n"
-        return Data(yaml.utf8)
     }
 
     private func nodeValue(_ node: AccessibilityNode) -> YAMLValue {
@@ -210,131 +326,5 @@ final class YAMLAccessibilityTreeRenderer: AccessibilityTreeRenderer {
         case string(String)
         case dictionary([String: YAMLValue])
         case array([YAMLValue])
-    }
-}
-
-final class RendererForLLM: AccessibilityTreeRenderer {
-    // Focus on semantic details that help an LLM reason about and control UI surfaces.
-    private static let defaultAllowedAttributes: Set<String> = [
-        "axrole",
-        "axsubrole",
-        "axroledescription",
-        "axidentifier",
-        "axtitle",
-        "axlabel",
-        "axvalue",
-        "axdescription",
-        "axhelp",
-        "axplaceholdervalue",
-        "axenabled",
-        "axfocused",
-        "axframe",
-        "role",
-        "subrole",
-        "identifier",
-        "title",
-        "label",
-        "value",
-        "description",
-        "help",
-        "placeholder",
-        "enabled",
-        "focused",
-        "frame"
-    ]
-
-    private let allowedAttributes: Set<String>
-    private let yamlRenderer: YAMLAccessibilityTreeRenderer
-
-    init(attributeAllowList: Set<String> = RendererForLLM.defaultAllowedAttributes) {
-        self.allowedAttributes = Set(attributeAllowList.map { $0.lowercased() })
-        self.yamlRenderer = YAMLAccessibilityTreeRenderer()
-    }
-
-    func render(node: AccessibilityNode) throws -> Data {
-        let prunedNode = prune(node: node) ?? AccessibilityNode(attributes: [:], children: [])
-        return try yamlRenderer.render(node: prunedNode)
-    }
-
-    private func prune(node: AccessibilityNode) -> AccessibilityNode? {
-        let prunedChildren = node.children.compactMap { prune(node: $0) }
-
-        let filteredAttributes = node.attributes.reduce(into: [String: String]()) { result, attribute in
-            let key = attribute.key
-            let normalizedKey = key.lowercased()
-            guard allowedAttributes.contains(normalizedKey) else { return }
-
-            let trimmedValue = attribute.value.trimmingCharacters(in: .whitespacesAndNewlines)
-            guard !trimmedValue.isEmpty else { return }
-
-            guard let normalizedValue = normalizeAttributeValue(for: normalizedKey, value: trimmedValue) else {
-                return
-            }
-
-            result[key] = normalizedValue
-        }
-
-        let isStructural = !prunedChildren.isEmpty
-        if filteredAttributes.isEmpty && !isStructural {
-            return nil
-        }
-
-        return AccessibilityNode(attributes: filteredAttributes, children: prunedChildren)
-    }
-
-    private func normalizeAttributeValue(for normalizedKey: String, value: String) -> String? {
-        switch normalizedKey {
-        case "axenabled", "enabled":
-            guard let boolValue = parseBoolean(value) else { return nil }
-            return boolValue ? nil : "false"
-        case "axfocused", "focused":
-            guard let boolValue = parseBoolean(value) else { return nil }
-            return boolValue ? "true" : nil
-        case "axframe", "frame":
-            return frameCenter(from: value)
-        default:
-            return value
-        }
-    }
-
-    private func parseBoolean(_ value: String) -> Bool? {
-        let lowercased = value.lowercased()
-        if ["true", "1", "yes"].contains(lowercased) {
-            return true
-        }
-        if ["false", "0", "no"].contains(lowercased) {
-            return false
-        }
-        return nil
-    }
-
-    private func frameCenter(from value: String) -> String? {
-        let pattern = "-?\\d+(?:\\.\\d+)?"
-        guard let regex = try? NSRegularExpression(pattern: pattern, options: []) else {
-            return nil
-        }
-
-        let matches = regex.matches(in: value, range: NSRange(value.startIndex..., in: value))
-        var numbers: [Double] = []
-        numbers.reserveCapacity(matches.count)
-
-        for match in matches {
-            guard let range = Range(match.range, in: value) else { continue }
-            let substring = String(value[range])
-            guard let number = Double(substring) else { continue }
-            numbers.append(number)
-        }
-
-        guard numbers.count >= 4 else { return nil }
-
-        let originX = numbers[0]
-        let originY = numbers[1]
-        let width = numbers[2]
-        let height = numbers[3]
-
-        let centerX = Int((originX + width / 2.0).rounded())
-        let centerY = Int((originY + height / 2.0).rounded())
-
-        return "\(centerX), \(centerY)"
     }
 }

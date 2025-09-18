@@ -23,4 +23,4 @@ Accessibility API allows observing changes: https://chatgpt.com/share/68cc4405-5
 - Do we need to mix ATs with screenshots to better percept the layout?
 - Multitasking
 
-
+- Capturing a tree of Youtube page is slow

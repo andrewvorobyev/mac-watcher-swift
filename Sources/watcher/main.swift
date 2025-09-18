@@ -17,7 +17,7 @@ struct WatcherMain {
         let pid = pid_t(pidValue)
 
         let collector = AccessibilityTreeCollector()
-        let renderer: AccessibilityTreeRenderer = XMLAccessibilityTreeRenderer(includeOnlyTextNodesAndAncestors: true)
+        let renderer: AccessibilityTreeRenderer = RendererForLLM()
 
         do {
             let tree = try collector.collectTree(for: pid)
@@ -45,7 +45,7 @@ struct WatcherMain {
             try fileManager.createDirectory(at: outputDirectory, withIntermediateDirectories: true)
         }
 
-        return outputDirectory.appendingPathComponent("\(pid).xml")
+        return outputDirectory.appendingPathComponent("\(pid).yaml")
     }
 
     private static func logError(_ message: String) {

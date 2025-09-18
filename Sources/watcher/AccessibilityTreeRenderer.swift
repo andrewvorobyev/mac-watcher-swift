@@ -22,6 +22,7 @@ final class YAMLAccessibilityTreeRenderer: AccessibilityTreeRenderer {
             let dropGroupRoles: Bool
             let emitEnabledOnlyWhenFalse: Bool
             let emitFocusedOnlyWhenTrue: Bool
+            let includeFrame: Bool
         }
 
         let mode: Mode
@@ -48,7 +49,8 @@ final class YAMLAccessibilityTreeRenderer: AccessibilityTreeRenderer {
                     focusedKeys: ["AXFocused"],
                     dropGroupRoles: true,
                     emitEnabledOnlyWhenFalse: true,
-                    emitFocusedOnlyWhenTrue: true
+                    emitFocusedOnlyWhenTrue: true,
+                    includeFrame: false
                 )
             ),
             includeOnlyTextNodesAndAncestors: false,
@@ -91,8 +93,24 @@ final class YAMLAccessibilityTreeRenderer: AccessibilityTreeRenderer {
             processedNode = node
         }
 
+        let nodesForRendering: [AccessibilityNode]
+        switch configuration.mode {
+        case .all:
+            nodesForRendering = [processedNode]
+        case .llm:
+            nodesForRendering = pruneTextlessNodes(from: processedNode)
+        }
+
+        let contentValue: YAMLValue
+        switch configuration.mode {
+        case .all:
+            contentValue = nodeValue(processedNode, configuration: configuration)
+        case .llm:
+            contentValue = .array(nodesForRendering.map { nodeValue($0, configuration: configuration) })
+        }
+
         let rootValue: YAMLValue = .dictionary([
-            "accessibilityTree": nodeValue(processedNode, configuration: configuration)
+            "accessibilityTree": contentValue
         ])
         let lines = serialize(rootValue, indentLevel: 0)
         let yaml = lines.joined(separator: "\n") + "\n"
@@ -146,18 +164,20 @@ final class YAMLAccessibilityTreeRenderer: AccessibilityTreeRenderer {
                 result["text"] = summarizeText(text)
             }
 
-            if let positionKey = options.positionKey,
-               let rawPosition = value(for: positionKey, in: attributes),
-               let coordinates = parseNamedValues(["x", "y"], from: rawPosition) {
-                result["x"] = formatNumber(coordinates[0])
-                result["y"] = formatNumber(coordinates[1])
-            }
+            if options.includeFrame {
+                if let positionKey = options.positionKey,
+                   let rawPosition = value(for: positionKey, in: attributes),
+                   let coordinates = parseNamedValues(["x", "y"], from: rawPosition) {
+                    result["x"] = formatNumber(coordinates[0])
+                    result["y"] = formatNumber(coordinates[1])
+                }
 
-            if let sizeKey = options.sizeKey,
-               let rawSize = value(for: sizeKey, in: attributes),
-               let sizeValues = parseNamedValues(["w", "h"], from: rawSize) {
-                result["width"] = formatNumber(sizeValues[0])
-                result["height"] = formatNumber(sizeValues[1])
+                if let sizeKey = options.sizeKey,
+                   let rawSize = value(for: sizeKey, in: attributes),
+                   let sizeValues = parseNamedValues(["w", "h"], from: rawSize) {
+                    result["width"] = formatNumber(sizeValues[0])
+                    result["height"] = formatNumber(sizeValues[1])
+                }
             }
 
             if let enabled = booleanValue(in: attributes, keys: options.enabledKeys) {
@@ -352,6 +372,19 @@ final class YAMLAccessibilityTreeRenderer: AccessibilityTreeRenderer {
     private func isStructureNode(attributes: [String: String]) -> Bool {
         let keys = attributes.keys.map { $0.lowercased() }
         return !keys.contains("role") && !keys.contains("text")
+    }
+
+    private func pruneTextlessNodes(from node: AccessibilityNode) -> [AccessibilityNode] {
+        let prunedChildren = node.children.flatMap { pruneTextlessNodes(from: $0) }
+        let textValue = node.attributes["text"]?.trimmingCharacters(in: .whitespacesAndNewlines)
+        let hasText = !(textValue?.isEmpty ?? true)
+
+        if hasText {
+            let newNode = AccessibilityNode(attributes: node.attributes, children: prunedChildren)
+            return [newNode]
+        }
+
+        return prunedChildren
     }
 
     private func nodeValue(_ node: AccessibilityNode, configuration: Configuration) -> YAMLValue {

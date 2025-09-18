@@ -1,15 +1,5 @@
 # mac-watcher-swift
 
-Simple Swift command-line tool that currently prints `Hello World`.
+Grant permissions in `System Settings > Privacy & Security > Accessibility` to the terminal you will be calling the app from.
 
-## Build
-
-```sh
-swift build
-```
-
-## Run
-
-```sh
-swift run watcher
-```
+Use the `Makefile` for build and run

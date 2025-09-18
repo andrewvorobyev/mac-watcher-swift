@@ -19,8 +19,15 @@ struct WatcherMain {
         let collector = AccessibilityTreeCollector()
 
         do {
+            let captureStart = Date()
             let tree = try collector.collectTree(for: pid)
+            let captureDuration = Date().timeIntervalSince(captureStart)
+            print(String(format: "Captured accessibility tree in %.3f s", captureDuration))
+
+            let renderStart = Date()
             try renderVariants(for: pid, tree: tree)
+            let renderDuration = Date().timeIntervalSince(renderStart)
+            print(String(format: "Rendered accessibility tree variants in %.3f s", renderDuration))
         } catch let error as AccessibilityCollectorError {
             logError(error.description)
             exit(EXIT_FAILURE)

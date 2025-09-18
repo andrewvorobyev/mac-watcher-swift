@@ -1,8 +1,8 @@
 build:
-	swift build
+	swift build -c release
 
 watch-brave:
-	swift run watcher $$(pgrep -x "Brave Browser" | head -n 1)
+	swift run -c release watcher $$(pgrep -x "Brave Browser" | head -n 1)
 
 watch-iterm:
-	swift run watcher $$(pgrep -x "iTerm2" | head -n 1)
+	swift run -c release watcher $$(pgrep -x "iTerm2" | head -n 1)

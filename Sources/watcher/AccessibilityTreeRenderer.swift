@@ -5,9 +5,22 @@ protocol AccessibilityTreeRenderer {
 }
 
 final class XMLAccessibilityTreeRenderer: AccessibilityTreeRenderer {
+    private let includeOnlyTextNodesAndAncestors: Bool
+
+    init(includeOnlyTextNodesAndAncestors: Bool = false) {
+        self.includeOnlyTextNodesAndAncestors = includeOnlyTextNodesAndAncestors
+    }
+
     func render(node: AccessibilityNode) throws -> Data {
+        let processedNode: AccessibilityNode
+        if includeOnlyTextNodesAndAncestors {
+            processedNode = filter(node: node) ?? AccessibilityNode(attributes: [:], children: [])
+        } else {
+            processedNode = node
+        }
+
         var xml = "<?xml version=\"1.0\" encoding=\"UTF-8\"?>\n"
-        xml += render(node: node, indentLevel: 0, isRoot: true)
+        xml += render(node: processedNode, indentLevel: 0, isRoot: true)
         return Data(xml.utf8)
     }
 
@@ -35,6 +48,32 @@ final class XMLAccessibilityTreeRenderer: AccessibilityTreeRenderer {
 
         result += "\(indent)</\(nodeName)>\n"
         return result
+    }
+
+    private func filter(node: AccessibilityNode) -> AccessibilityNode? {
+        let filteredChildren = node.children.compactMap { filter(node: $0) }
+        if nodeContainsText(node) || !filteredChildren.isEmpty {
+            return AccessibilityNode(attributes: node.attributes, children: filteredChildren)
+        }
+        return nil
+    }
+
+    private func nodeContainsText(_ node: AccessibilityNode) -> Bool {
+        for (key, value) in node.attributes {
+            let trimmed = value.trimmingCharacters(in: .whitespacesAndNewlines)
+            guard !trimmed.isEmpty else { continue }
+
+            let lowerKey = key.lowercased()
+            if lowerKey.contains("value") ||
+                lowerKey.contains("title") ||
+                lowerKey.contains("label") ||
+                lowerKey.contains("description") ||
+                lowerKey.contains("placeholder") ||
+                lowerKey.contains("text") {
+                return true
+            }
+        }
+        return false
     }
 
     private func escapeXML(_ string: String) -> String {

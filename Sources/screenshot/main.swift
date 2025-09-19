@@ -85,7 +85,7 @@ struct ScreenshotMain {
             guard CFGetTypeID(boundsCF) == CFDictionaryGetTypeID() else {
                 continue
             }
-            let boundsDict = unsafeBitCast(boundsCF, to: CFDictionary.self)
+            let boundsDict = unsafeDowncast(boundsCF as AnyObject, to: CFDictionary.self)
             guard let bounds = CGRect(dictionaryRepresentation: boundsDict), bounds.width > 0, bounds.height > 0 else {
                 continue
             }

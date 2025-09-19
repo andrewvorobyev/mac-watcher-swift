@@ -9,7 +9,7 @@ struct ScreenshotMain {
             do {
                 try run()
             } catch {
-            logError("Screenshot failed: \(error)")
+                logError("Screenshot failed: \(error)")
                 exit(EXIT_FAILURE)
             }
         }
@@ -18,7 +18,7 @@ struct ScreenshotMain {
     private static func run() throws {
         let arguments = CommandLine.arguments
         guard arguments.count == 2 else {
-            logError("Usage: snapshot <pid>")
+            logError("Usage: screenshot <pid>")
             exit(EXIT_FAILURE)
         }
 
@@ -31,12 +31,14 @@ struct ScreenshotMain {
         let pid = pid_t(pidValue)
         let baseName = ProcessUtilities.resolveAppName(for: pid)
 
-        let windowBounds = try fetchWindowBounds(for: pid)
-        guard let captureRect = windowBounds else {
+        guard let window = try primaryWindow(for: pid) else {
             throw ScreenshotError.noVisibleWindows
         }
 
-        guard let image = CGWindowListCreateImage(captureRect, [.optionOnScreenOnly], kCGNullWindowID, [.bestResolution]) else {
+        guard let image = CGWindowListCreateImage(.null,
+                                                  [.optionIncludingWindow],
+                                                  window.id,
+                                                  [.boundsIgnoreFraming, .bestResolution]) else {
             throw ScreenshotError.captureFailed
         }
 
@@ -52,37 +54,55 @@ struct ScreenshotMain {
         print("Screenshot saved to \(fileURL.path)")
     }
 
-    private static func fetchWindowBounds(for pid: pid_t) throws -> CGRect? {
-        guard let infoList = CGWindowListCopyWindowInfo([.optionOnScreenOnly], kCGNullWindowID) as? [[String: Any]] else {
+    private static func primaryWindow(for pid: pid_t) throws -> (id: CGWindowID, bounds: CGRect)? {
+        guard let infoList = CGWindowListCopyWindowInfo([.optionOnScreenOnly, .excludeDesktopElements], kCGNullWindowID) as? [[String: Any]] else {
             throw ScreenshotError.windowEnumerationFailed
         }
 
-        var unionRect = CGRect.null
+        var bestCandidate: (id: CGWindowID, bounds: CGRect, area: CGFloat)?
+
         for info in infoList {
             guard let windowPID = info[kCGWindowOwnerPID as String] as? pid_t, windowPID == pid else {
                 continue
             }
-            guard let boundsAny = info[kCGWindowBounds as String] else {
+            if let isOnscreen = info[kCGWindowIsOnscreen as String] as? Bool, !isOnscreen {
+                continue
+            }
+            if let alpha = info[kCGWindowAlpha as String] as? Double, alpha <= 0 {
+                continue
+            }
+            if let layer = info[kCGWindowLayer as String] as? Int, layer != 0 {
+                continue
+            }
+            guard let windowNumber = info[kCGWindowNumber as String] as? CGWindowID else {
                 continue
             }
 
+            guard let boundsAny = info[kCGWindowBounds as String] else {
+                continue
+            }
             let boundsCF = boundsAny as CFTypeRef
             guard CFGetTypeID(boundsCF) == CFDictionaryGetTypeID() else {
                 continue
             }
-
             let boundsDict = unsafeBitCast(boundsCF, to: CFDictionary.self)
-            guard let bounds = CGRect(dictionaryRepresentation: boundsDict) else {
+            guard let bounds = CGRect(dictionaryRepresentation: boundsDict), bounds.width > 0, bounds.height > 0 else {
                 continue
             }
-            if unionRect.isNull {
-                unionRect = bounds
+            let area = bounds.width * bounds.height
+            if let current = bestCandidate {
+                if area > current.area {
+                    bestCandidate = (windowNumber, bounds.integral, area)
+                }
             } else {
-                unionRect = unionRect.union(bounds)
+                bestCandidate = (windowNumber, bounds.integral, area)
             }
         }
 
-        return unionRect.isNull ? nil : unionRect.integral
+        if let best = bestCandidate {
+            return (best.id, best.bounds)
+        }
+        return nil
     }
 
     private static func logError(_ message: String) {

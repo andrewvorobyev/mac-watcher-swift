@@ -1,101 +1,6 @@
 import Foundation
 import ApplicationServices
 
-struct AccessibilityNode {
-    let attributes: [String: String]
-    let children: [AccessibilityNode]
-}
-
-struct AccessibilityTreeConfiguration {
-    enum Mode {
-        case llm(LLMOptions)
-        case all
-    }
-
-    struct LLMOptions {
-        let roleKeys: [String]
-        let textKeys: [String]
-        let identifierKeys: [String]
-        let positionKey: String?
-        let sizeKey: String?
-        let enabledKeys: [String]
-        let focusedKeys: [String]
-        let dropGroupRoles: Bool
-        let emitEnabledOnlyWhenFalse: Bool
-        let emitFocusedOnlyWhenTrue: Bool
-        let includeFrame: Bool
-        let prunedRoles: Set<String>
-    }
-
-    let mode: Mode
-    let includeOnlyTextNodesAndAncestors: Bool
-    let pruneAttributeLessLeaves: Bool
-    let stripAttributesFromStructureNodes: Bool
-    let includeHiddenElements: Bool
-
-    static let llm = AccessibilityTreeConfiguration(
-        mode: .llm(
-            LLMOptions(
-                roleKeys: ["AXRole"],
-                textKeys: [
-                    "AXValue",
-                    "AXTitle",
-                    "AXLabel",
-                    "AXPlaceholderValue",
-                    "AXDescription",
-                    "AXHelp"
-                ],
-                identifierKeys: ["AXIdentifier"],
-                positionKey: "AXPosition",
-                sizeKey: "AXSize",
-                enabledKeys: ["AXEnabled"],
-                focusedKeys: ["AXFocused"],
-                dropGroupRoles: true,
-                emitEnabledOnlyWhenFalse: true,
-                emitFocusedOnlyWhenTrue: true,
-                includeFrame: false,
-                prunedRoles: ["AXList"]
-            )
-        ),
-        includeOnlyTextNodesAndAncestors: false,
-        pruneAttributeLessLeaves: true,
-        stripAttributesFromStructureNodes: true,
-        includeHiddenElements: false
-    )
-
-    static let all = AccessibilityTreeConfiguration(
-        mode: .all,
-        includeOnlyTextNodesAndAncestors: false,
-        pruneAttributeLessLeaves: false,
-        stripAttributesFromStructureNodes: false,
-        includeHiddenElements: false
-    )
-
-    var attributeWhitelist: Set<String>? {
-        switch mode {
-        case .all:
-            return nil
-        case .llm(let options):
-            var names = Set<String>()
-            names.formUnion(options.roleKeys)
-            names.formUnion(options.textKeys)
-            names.formUnion(options.identifierKeys)
-            names.formUnion(options.enabledKeys)
-            names.formUnion(options.focusedKeys)
-            names.insert(kAXHiddenAttribute as String)
-            if let positionKey = options.positionKey {
-                names.insert(positionKey)
-            }
-            if let sizeKey = options.sizeKey {
-                names.insert(sizeKey)
-            }
-            names.insert(kAXRoleAttribute as String)
-            names.insert(kAXSubroleAttribute as String)
-            return names
-        }
-    }
-}
-
 enum AccessibilityCollectorError: Error, CustomStringConvertible {
     case accessibilityPermissionMissing
     case axError(AXError)
@@ -364,7 +269,7 @@ final class AccessibilityTreeCollector {
                         continue
                     }
                 }
-                attributes[name] = stringify(rawValue)
+                attributes[name] = AXValueUtilities.stringify(rawValue)
             }
             return (attributes, errors)
         }
@@ -398,7 +303,7 @@ final class AccessibilityTreeCollector {
         guard let raw = value else {
             return .success(nil)
         }
-        return .success(stringify(raw))
+        return .success(AXValueUtilities.stringify(raw))
     }
 
     private func processAttributes(_ attributes: [String: String]) -> [String: String] {
@@ -435,91 +340,19 @@ final class AccessibilityTreeCollector {
         return AccessibilityNode(attributes: attributes, children: children)
     }
 
-    private func isHidden(attributes: [String: String]) -> Bool {
-        for (key, value) in attributes {
-            if key.compare(kAXHiddenAttribute as String, options: [.caseInsensitive]) == .orderedSame {
-                if let hidden = parseBoolean(value) {
-                    return hidden
-                }
-            }
-            if key.compare(kAXExpandedAttribute as String, options: [.caseInsensitive]) == .orderedSame {
-                if let expanded = parseBoolean(value), expanded == false {
-                    return true
-                }
-            }
-        }
-        return false
-    }
-
-    private func stringify(_ value: Any) -> String {
-        if let string = value as? String {
-            return summarizeScalar(string)
-        }
-        if let attributed = value as? NSAttributedString {
-            return summarizeScalar(attributed.string)
-        }
-        if let number = value as? NSNumber {
-            if CFGetTypeID(number as CFTypeRef) == CFBooleanGetTypeID() {
-                return number.boolValue ? "true" : "false"
-            }
-            return number.stringValue
-        }
-        if let array = value as? [Any] {
-            if array.isEmpty {
-                return "[]"
-            }
-            if array.count > 24 {
-                return "Array(count: \(array.count))"
-            }
-            let elements = array.prefix(24).map { stringify($0) }
-            let suffix = array.count > 24 ? ", …" : ""
-            return "[" + elements.joined(separator: ", ") + suffix + "]"
-        }
-        if let dictionary = value as? [AnyHashable: Any] {
-            if dictionary.isEmpty {
-                return "{}"
-            }
-            if dictionary.count > 24 {
-                return "Dictionary(count: \(dictionary.count))"
-            }
-            let pairs = dictionary
-                .map { key, value -> String in
-                    let keyString = String(describing: key)
-                    let valueString = stringify(value)
-                    return "\(keyString): \(valueString)"
-                }
-                .sorted()
-            return "{" + pairs.joined(separator: ", ") + "}"
-        }
-        let cfObject = value as AnyObject
-        if CFGetTypeID(cfObject) == AXUIElementGetTypeID() {
-            return "AXUIElement"
-        }
-        return summarizeScalar(String(describing: value))
-    }
-
-    private func summarizeScalar(_ string: String) -> String {
-        guard string.count > 256 else { return string }
-        let index = string.index(string.startIndex, offsetBy: 256)
-        let prefix = String(string[string.startIndex..<index])
-        let trimmed = prefix.trimmingCharacters(in: .whitespacesAndNewlines)
-        let remainder = string.count - trimmed.count
-        return "\(trimmed)… (+\(remainder) chars)"
-    }
-
     private func filterAttributes(_ attributes: [String: String], options: AccessibilityTreeConfiguration.LLMOptions) -> [String: String] {
         var result: [String: String] = [:]
 
         if let role = firstMatch(in: attributes, keys: options.roleKeys), !shouldDrop(role: role, dropGroupRoles: options.dropGroupRoles) {
-            result["role"] = condenseWhitespace(in: role)
+            result["role"] = AXValueUtilities.condenseWhitespace(role)
         }
 
         if let identifier = firstMatch(in: attributes, keys: options.identifierKeys) {
-            result["identifier"] = condenseWhitespace(in: identifier)
+            result["identifier"] = AXValueUtilities.condenseWhitespace(identifier)
         }
 
         if let text = aggregateText(from: attributes, keys: options.textKeys) {
-            result["text"] = summarizeText(text)
+            result["text"] = AXValueUtilities.summarizeText(text)
         }
 
         if options.includeFrame {
@@ -597,45 +430,12 @@ final class AccessibilityTreeCollector {
         }
         guard !parts.isEmpty else { return nil }
         let joined = parts.joined(separator: " ")
-        return condenseWhitespace(in: joined)
-    }
-
-    private func summarizeText(_ text: String) -> String {
-        let condensed = condenseWhitespace(in: text)
-        let limit = 180
-        guard condensed.count > limit else { return condensed }
-
-        let index = condensed.index(condensed.startIndex, offsetBy: limit)
-        var snippet = String(condensed[..<index])
-        snippet = snippet.trimmingCharacters(in: .whitespacesAndNewlines)
-        let remaining = max(condensed.count - snippet.count, 0)
-
-        if remaining == 0 {
-            return snippet
-        }
-
-        return "\(snippet)… (+\(remaining) chars)"
-    }
-
-    private func condenseWhitespace(in text: String) -> String {
-        let condensed = text.replacingOccurrences(of: "\\s+", with: " ", options: .regularExpression)
-        return condensed.trimmingCharacters(in: .whitespacesAndNewlines)
+        return AXValueUtilities.condenseWhitespace(joined)
     }
 
     private func booleanValue(in attributes: [String: String], keys: [String]) -> Bool? {
         guard let raw = firstMatch(in: attributes, keys: keys) else { return nil }
-        return parseBoolean(raw)
-    }
-
-    private func parseBoolean(_ value: String) -> Bool? {
-        let lowercased = value.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
-        if ["true", "1", "yes"].contains(lowercased) {
-            return true
-        }
-        if ["false", "0", "no"].contains(lowercased) {
-            return false
-        }
-        return nil
+        return AXValueUtilities.parseBoolean(raw)
     }
 
     private func parseNamedValues(_ keys: [String], from raw: String) -> [Double]? {
@@ -729,6 +529,22 @@ final class AccessibilityTreeCollector {
     private func isStructureNode(attributes: [String: String]) -> Bool {
         let keys = attributes.keys.map { $0.lowercased() }
         return !keys.contains("role") && !keys.contains("text")
+    }
+
+    private func isHidden(attributes: [String: String]) -> Bool {
+        for (key, value) in attributes {
+            if key.compare(kAXHiddenAttribute as String, options: [.caseInsensitive]) == .orderedSame {
+                if let hidden = AXValueUtilities.parseBoolean(value) {
+                    return hidden
+                }
+            }
+            if key.compare(kAXExpandedAttribute as String, options: [.caseInsensitive]) == .orderedSame {
+                if let expanded = AXValueUtilities.parseBoolean(value), expanded == false {
+                    return true
+                }
+            }
+        }
+        return false
     }
 }
 

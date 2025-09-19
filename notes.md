@@ -30,4 +30,7 @@ Accessibility API allows observing changes: https://chatgpt.com/share/68cc4405-5
 - Need to limit capturing to visible elements only. Currently I'm capturing menus content as well (including the top of the screen menu bar).
     - After changes, there're still some invisible elements returned (e.g. hover views). That can be further optimized.
 
+## TODO
 
+- Count tokens for common pages in compact json representation: google.com, x.com, youtube.com, github
+- Implement the observer

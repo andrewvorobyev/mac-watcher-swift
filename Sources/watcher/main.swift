@@ -33,6 +33,12 @@ struct WatcherMain {
             ("all", .all)
         ]
 
+        let renderers: [RendererDescriptor] = [
+            RendererDescriptor(suffix: "", fileExtension: "yaml", makeRenderer: { YAMLAccessibilityTreeRenderer(configuration: $0) }),
+            RendererDescriptor(suffix: "", fileExtension: "json", makeRenderer: { JSONAccessibilityTreeRenderer(configuration: $0, style: .pretty) }),
+            RendererDescriptor(suffix: ".min", fileExtension: "json", makeRenderer: { JSONAccessibilityTreeRenderer(configuration: $0, style: .compact) })
+        ]
+
         for (name, configuration) in variants {
             let collector = AccessibilityTreeCollector(configuration: configuration)
 
@@ -41,21 +47,24 @@ struct WatcherMain {
             let captureDuration = Date().timeIntervalSince(captureStart)
             print(String(format: "Captured accessibility tree (%@) in %.3f s", name, captureDuration))
 
-            let renderer = YAMLAccessibilityTreeRenderer(configuration: configuration)
+            for rendererDescriptor in renderers {
+                let renderer = rendererDescriptor.makeRenderer(configuration)
 
-            let renderStart = Date()
-            let data = try renderer.render(node: tree)
-            let renderDuration = Date().timeIntervalSince(renderStart)
-            print(String(format: "Rendered accessibility tree (%@) in %.3f s", name, renderDuration))
+                let renderStart = Date()
+                let data = try renderer.render(node: tree)
+                let renderDuration = Date().timeIntervalSince(renderStart)
+                let outputVariant = name + rendererDescriptor.suffix
+                print(String(format: "Rendered accessibility tree (%@) in %.3f s", outputVariant, renderDuration))
 
-            let fileURL = try prepareOutputURL(for: pid, variant: name)
-            try data.write(to: fileURL)
+                let fileURL = try prepareOutputURL(for: pid, variant: outputVariant, fileExtension: rendererDescriptor.fileExtension)
+                try data.write(to: fileURL)
 
-            print("Accessibility tree (\(name)) saved to \(fileURL.path)")
+                print("Accessibility tree (\(outputVariant)) saved to \(fileURL.path)")
+            }
         }
     }
 
-    private static func prepareOutputURL(for pid: pid_t, variant: String) throws -> URL {
+    private static func prepareOutputURL(for pid: pid_t, variant: String, fileExtension: String) throws -> URL {
         let fileManager = FileManager.default
         let outputDirectory = URL(fileURLWithPath: fileManager.currentDirectoryPath)
             .appendingPathComponent("output", isDirectory: true)
@@ -64,12 +73,18 @@ struct WatcherMain {
             try fileManager.createDirectory(at: outputDirectory, withIntermediateDirectories: true)
         }
 
-        return outputDirectory.appendingPathComponent("\(pid)-\(variant).yaml")
+        return outputDirectory.appendingPathComponent("\(pid)-\(variant).\(fileExtension)")
     }
 
     private static func logError(_ message: String) {
         fputs(message + "\n", stderr)
     }
+}
+
+private struct RendererDescriptor {
+    let suffix: String
+    let fileExtension: String
+    let makeRenderer: (AccessibilityTreeConfiguration) -> AccessibilityTreeRenderer
 }
 
 WatcherMain.main()

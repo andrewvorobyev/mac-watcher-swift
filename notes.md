@@ -36,3 +36,14 @@ Accessibility API allows observing changes: https://chatgpt.com/share/68cc4405-5
 
 - Count tokens for common pages in compact json representation: google.com, x.com, youtube.com, github
 - Implement the observer
+
+
+## Findings: Capture
+
+**Tokens to capture, time to capture**
+
+google.com blank: 1K, 0.15s
+x.com after some scrolling: 8K, 0.7s
+github.com workflow log (simple, expanded): 3.5K, 0.2s
+youtube.com video opened + comments: 15K, 0.7s
+

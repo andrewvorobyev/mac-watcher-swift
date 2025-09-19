@@ -54,7 +54,7 @@ struct AccessibilityTreeConfiguration {
                 emitEnabledOnlyWhenFalse: true,
                 emitFocusedOnlyWhenTrue: true,
                 includeFrame: false,
-                prunedRoles: ["AXList", "AXWebArea"]
+                prunedRoles: ["AXList"]
             )
         ),
         includeOnlyTextNodesAndAncestors: false,
@@ -268,28 +268,30 @@ final class AccessibilityTreeCollector {
     }
 
     private func copyChildren(from element: AXUIElement, visited: inout Set<AXElementID>) -> Result<[AccessibilityNode], AccessibilityCollectorError> {
-        let elementsResult: Result<[AXUIElement], AccessibilityCollectorError>
-        if !configuration.includeHiddenElements {
-            if let visible = copyChildrenAttribute(element: element, attribute: kAXVisibleChildrenAttribute as CFString) {
-                switch visible {
-                case .success:
-                    elementsResult = visible
-                case .failure:
-                    elementsResult = copyChildrenAttribute(element: element, attribute: kAXChildrenAttribute as CFString) ?? visible
+        let useVisible = !configuration.includeHiddenElements
+
+        if useVisible {
+            if let visibleResult = copyChildrenAttribute(element: element, attribute: kAXVisibleChildrenAttribute as CFString) {
+                switch visibleResult {
+                case .failure(let error):
+                    if let fallback = copyChildrenAttribute(element: element, attribute: kAXChildrenAttribute as CFString) {
+                        return buildChildrenResult(fallback, visited: &visited)
+                    }
+                    return .failure(error)
+                case .success(let visibleElements):
+                    if visibleElements.isEmpty {
+                        return .success([])
+                    }
+                    return buildChildren(from: visibleElements, visited: &visited)
                 }
-            } else {
-                elementsResult = copyChildrenAttribute(element: element, attribute: kAXChildrenAttribute as CFString) ?? .success([])
             }
-        } else {
-            elementsResult = copyChildrenAttribute(element: element, attribute: kAXChildrenAttribute as CFString) ?? .success([])
         }
 
-        switch elementsResult {
-        case .failure(let error):
-            return .failure(error)
-        case .success(let elements):
-            return buildChildren(from: elements, visited: &visited)
+        if let allResult = copyChildrenAttribute(element: element, attribute: kAXChildrenAttribute as CFString) {
+            return buildChildrenResult(allResult, visited: &visited)
         }
+
+        return .success([])
     }
 
     private func copyChildrenAttribute(element: AXUIElement, attribute: CFString) -> Result<[AXUIElement], AccessibilityCollectorError>? {
@@ -307,6 +309,15 @@ final class AccessibilityTreeCollector {
         }
 
         return .success(array)
+    }
+
+    private func buildChildrenResult(_ result: Result<[AXUIElement], AccessibilityCollectorError>, visited: inout Set<AXElementID>) -> Result<[AccessibilityNode], AccessibilityCollectorError> {
+        switch result {
+        case .failure(let error):
+            return .failure(error)
+        case .success(let elements):
+            return buildChildren(from: elements, visited: &visited)
+        }
     }
 
     private func buildChildren(from elements: [AXUIElement], visited: inout Set<AXElementID>) -> Result<[AccessibilityNode], AccessibilityCollectorError> {
@@ -429,6 +440,11 @@ final class AccessibilityTreeCollector {
             if key.compare(kAXHiddenAttribute as String, options: [.caseInsensitive]) == .orderedSame {
                 if let hidden = parseBoolean(value) {
                     return hidden
+                }
+            }
+            if key.compare(kAXExpandedAttribute as String, options: [.caseInsensitive]) == .orderedSame {
+                if let expanded = parseBoolean(value), expanded == false {
+                    return true
                 }
             }
         }

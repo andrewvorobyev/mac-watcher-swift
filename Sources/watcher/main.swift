@@ -1,4 +1,5 @@
 import Foundation
+import AppKit
 
 struct WatcherMain {
     static func main() {
@@ -39,6 +40,8 @@ struct WatcherMain {
             RendererDescriptor(suffix: ".min", fileExtension: "json", makeRenderer: { JSONAccessibilityTreeRenderer(configuration: $0, style: .compact) })
         ]
 
+        let baseName = resolveAppName(for: pid)
+
         for (name, configuration) in variants {
             let collector = AccessibilityTreeCollector(configuration: configuration)
 
@@ -56,7 +59,7 @@ struct WatcherMain {
                 let outputVariant = name + rendererDescriptor.suffix
                 print(String(format: "Rendered accessibility tree (%@) in %.3f s", outputVariant, renderDuration))
 
-                let fileURL = try prepareOutputURL(for: pid, variant: outputVariant, fileExtension: rendererDescriptor.fileExtension)
+                let fileURL = try prepareOutputURL(baseName: baseName, variant: outputVariant, fileExtension: rendererDescriptor.fileExtension)
                 try data.write(to: fileURL)
 
                 print("Accessibility tree (\(outputVariant)) saved to \(fileURL.path)")
@@ -64,7 +67,7 @@ struct WatcherMain {
         }
     }
 
-    private static func prepareOutputURL(for pid: pid_t, variant: String, fileExtension: String) throws -> URL {
+    private static func prepareOutputURL(baseName: String, variant: String, fileExtension: String) throws -> URL {
         let fileManager = FileManager.default
         let outputDirectory = URL(fileURLWithPath: fileManager.currentDirectoryPath)
             .appendingPathComponent("output", isDirectory: true)
@@ -73,11 +76,32 @@ struct WatcherMain {
             try fileManager.createDirectory(at: outputDirectory, withIntermediateDirectories: true)
         }
 
-        return outputDirectory.appendingPathComponent("\(pid)-\(variant).\(fileExtension)")
+        return outputDirectory.appendingPathComponent("\(baseName)-\(variant).\(fileExtension)")
     }
 
     private static func logError(_ message: String) {
         fputs(message + "\n", stderr)
+    }
+
+    private static func resolveAppName(for pid: pid_t) -> String {
+        if let application = NSRunningApplication(processIdentifier: pid),
+           let name = application.localizedName,
+           let sanitized = sanitizeProcessName(name) {
+            return sanitized
+        }
+
+        return "pid-\(pid)"
+    }
+
+    private static func sanitizeProcessName(_ name: String) -> String? {
+        let allowed = CharacterSet.alphanumerics.union(CharacterSet(charactersIn: "-_"))
+        let components = name
+            .lowercased()
+            .components(separatedBy: allowed.inverted)
+            .filter { !$0.isEmpty }
+
+        guard !components.isEmpty else { return nil }
+        return components.joined(separator: "-")
     }
 }
 

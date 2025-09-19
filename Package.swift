@@ -10,7 +10,8 @@ let package = Package(
         .executable(name: "observe", targets: ["observe"])
     ],
     targets: [
-        .executableTarget(name: "capture"),
-        .executableTarget(name: "observe")
+        .target(name: "CaptureSupport"),
+        .executableTarget(name: "capture", dependencies: ["CaptureSupport"]),
+        .executableTarget(name: "observe", dependencies: ["CaptureSupport"])
     ]
 )

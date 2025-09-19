@@ -1,5 +1,6 @@
 import Foundation
 import AppKit
+import CaptureSupport
 
 @main
 struct CaptureMain {
@@ -41,7 +42,7 @@ struct CaptureMain {
             RendererDescriptor(suffix: ".min", fileExtension: "json", makeRenderer: { JSONAccessibilityTreeRenderer(configuration: $0, style: .compact) })
         ]
 
-        let baseName = resolveAppName(for: pid)
+        let baseName = ProcessUtilities.resolveAppName(for: pid)
 
         for (name, configuration) in variants {
             let collector = AccessibilityTreeCollector(configuration: configuration)
@@ -69,14 +70,7 @@ struct CaptureMain {
     }
 
     private static func prepareOutputURL(baseName: String, variant: String, fileExtension: String) throws -> URL {
-        let fileManager = FileManager.default
-        let outputDirectory = URL(fileURLWithPath: fileManager.currentDirectoryPath)
-            .appendingPathComponent("output", isDirectory: true)
-
-        if !fileManager.fileExists(atPath: outputDirectory.path) {
-            try fileManager.createDirectory(at: outputDirectory, withIntermediateDirectories: true)
-        }
-
+        let outputDirectory = try ProcessUtilities.outputDirectoryURL()
         return outputDirectory.appendingPathComponent("\(baseName)-\(variant).\(fileExtension)")
     }
 
@@ -84,26 +78,6 @@ struct CaptureMain {
         fputs(message + "\n", stderr)
     }
 
-    private static func resolveAppName(for pid: pid_t) -> String {
-        if let application = NSRunningApplication(processIdentifier: pid),
-           let name = application.localizedName,
-           let sanitized = sanitizeProcessName(name) {
-            return sanitized
-        }
-
-        return "pid-\(pid)"
-    }
-
-    private static func sanitizeProcessName(_ name: String) -> String? {
-        let allowed = CharacterSet.alphanumerics.union(CharacterSet(charactersIn: "-_"))
-        let components = name
-            .lowercased()
-            .components(separatedBy: allowed.inverted)
-            .filter { !$0.isEmpty }
-
-        guard !components.isEmpty else { return nil }
-        return components.joined(separator: "-")
-    }
 }
 
 private struct RendererDescriptor {

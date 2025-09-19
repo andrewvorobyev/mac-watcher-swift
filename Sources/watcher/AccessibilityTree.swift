@@ -31,6 +31,7 @@ struct AccessibilityTreeConfiguration {
     let includeOnlyTextNodesAndAncestors: Bool
     let pruneAttributeLessLeaves: Bool
     let stripAttributesFromStructureNodes: Bool
+    let includeHiddenElements: Bool
 
     static let llm = AccessibilityTreeConfiguration(
         mode: .llm(
@@ -58,14 +59,16 @@ struct AccessibilityTreeConfiguration {
         ),
         includeOnlyTextNodesAndAncestors: false,
         pruneAttributeLessLeaves: true,
-        stripAttributesFromStructureNodes: true
+        stripAttributesFromStructureNodes: true,
+        includeHiddenElements: false
     )
 
     static let all = AccessibilityTreeConfiguration(
         mode: .all,
         includeOnlyTextNodesAndAncestors: false,
         pruneAttributeLessLeaves: false,
-        stripAttributesFromStructureNodes: false
+        stripAttributesFromStructureNodes: false,
+        includeHiddenElements: false
     )
 
     var attributeWhitelist: Set<String>? {
@@ -79,6 +82,7 @@ struct AccessibilityTreeConfiguration {
             names.formUnion(options.identifierKeys)
             names.formUnion(options.enabledKeys)
             names.formUnion(options.focusedKeys)
+            names.insert(kAXHiddenAttribute as String)
             if let positionKey = options.positionKey {
                 names.insert(positionKey)
             }
@@ -109,11 +113,17 @@ enum AccessibilityCollectorError: Error, CustomStringConvertible {
 final class AccessibilityTreeCollector {
     private let configuration: AccessibilityTreeConfiguration
     private let childrenAttributeName = kAXChildrenAttribute as String
+    private let hiddenAttributeName = kAXHiddenAttribute as String
+    private let visibleChildrenAttributeName = kAXVisibleChildrenAttribute as String
     private let childrenAttributeNameLower: String
+    private let hiddenAttributeNameLower: String
+    private let visibleChildrenAttributeNameLower: String
 
     init(configuration: AccessibilityTreeConfiguration) {
         self.configuration = configuration
         self.childrenAttributeNameLower = (kAXChildrenAttribute as String).lowercased()
+        self.hiddenAttributeNameLower = (kAXHiddenAttribute as String).lowercased()
+        self.visibleChildrenAttributeNameLower = (kAXVisibleChildrenAttribute as String).lowercased()
     }
 
     convenience init() {
@@ -147,6 +157,11 @@ final class AccessibilityTreeCollector {
         case .success(let attributeNames):
             let namesToFetch = filteredAttributeNames(from: attributeNames)
             let (rawAttributes, attributeErrors) = copyAttributeValues(element: element, names: namesToFetch)
+
+            if !configuration.includeHiddenElements && isHidden(attributes: rawAttributes) {
+                visited.remove(identifier)
+                return nil
+            }
 
             let roleForTraversal = rawAttributes[kAXRoleAttribute as String]
 
@@ -205,6 +220,9 @@ final class AccessibilityTreeCollector {
             if lower == childrenAttributeNameLower {
                 continue
             }
+            if lower == visibleChildrenAttributeNameLower {
+                continue
+            }
             if let whitelist,
                !whitelist.contains(where: { $0.caseInsensitiveCompare(name) == .orderedSame }) {
                 continue
@@ -220,10 +238,17 @@ final class AccessibilityTreeCollector {
                 if lower == childrenAttributeNameLower {
                     continue
                 }
+                if lower == visibleChildrenAttributeNameLower {
+                    continue
+                }
                 if seen.insert(lower).inserted {
                     filtered.append(name)
                 }
             }
+        }
+
+        if !configuration.includeHiddenElements && seen.insert(hiddenAttributeNameLower).inserted {
+            filtered.append(hiddenAttributeName)
         }
 
         return filtered
@@ -243,10 +268,35 @@ final class AccessibilityTreeCollector {
     }
 
     private func copyChildren(from element: AXUIElement, visited: inout Set<AXElementID>) -> Result<[AccessibilityNode], AccessibilityCollectorError> {
+        let elementsResult: Result<[AXUIElement], AccessibilityCollectorError>
+        if !configuration.includeHiddenElements {
+            if let visible = copyChildrenAttribute(element: element, attribute: kAXVisibleChildrenAttribute as CFString) {
+                switch visible {
+                case .success:
+                    elementsResult = visible
+                case .failure:
+                    elementsResult = copyChildrenAttribute(element: element, attribute: kAXChildrenAttribute as CFString) ?? visible
+                }
+            } else {
+                elementsResult = copyChildrenAttribute(element: element, attribute: kAXChildrenAttribute as CFString) ?? .success([])
+            }
+        } else {
+            elementsResult = copyChildrenAttribute(element: element, attribute: kAXChildrenAttribute as CFString) ?? .success([])
+        }
+
+        switch elementsResult {
+        case .failure(let error):
+            return .failure(error)
+        case .success(let elements):
+            return buildChildren(from: elements, visited: &visited)
+        }
+    }
+
+    private func copyChildrenAttribute(element: AXUIElement, attribute: CFString) -> Result<[AXUIElement], AccessibilityCollectorError>? {
         var childrenCF: CFTypeRef?
-        let error = AXUIElementCopyAttributeValue(element, kAXChildrenAttribute as CFString, &childrenCF)
+        let error = AXUIElementCopyAttributeValue(element, attribute, &childrenCF)
         if error == .attributeUnsupported {
-            return .success([])
+            return nil
         }
         if error != .success {
             return .failure(.axError(error))
@@ -256,10 +306,14 @@ final class AccessibilityTreeCollector {
             return .success([])
         }
 
-        var result: [AccessibilityNode] = []
-        result.reserveCapacity(array.count)
+        return .success(array)
+    }
 
-        for child in array {
+    private func buildChildren(from elements: [AXUIElement], visited: inout Set<AXElementID>) -> Result<[AccessibilityNode], AccessibilityCollectorError> {
+        var result: [AccessibilityNode] = []
+        result.reserveCapacity(elements.count)
+
+        for child in elements {
             if let node = buildNode(from: child, visited: &visited) {
                 result.append(node)
             }
@@ -368,6 +422,17 @@ final class AccessibilityTreeCollector {
         }
 
         return AccessibilityNode(attributes: attributes, children: children)
+    }
+
+    private func isHidden(attributes: [String: String]) -> Bool {
+        for (key, value) in attributes {
+            if key.compare(kAXHiddenAttribute as String, options: [.caseInsensitive]) == .orderedSame {
+                if let hidden = parseBoolean(value) {
+                    return hidden
+                }
+            }
+        }
+        return false
     }
 
     private func stringify(_ value: Any) -> String {

@@ -349,6 +349,9 @@ final class AccessibilityTreeCollector {
         var attributes = attributes
         let children = children
 
+        attributes.removeValue(forKey: "identifier")
+        attributes.removeValue(forKey: "error.children")
+
         if configuration.stripAttributesFromStructureNodes && isStructureNode(attributes: attributes) {
             attributes.removeAll()
         }

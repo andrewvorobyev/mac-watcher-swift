@@ -47,19 +47,18 @@ struct CaptureMain {
         for (name, configuration) in variants {
             let collector = AccessibilityTreeCollector(configuration: configuration)
 
-            let captureStart = Date()
-            let tree = try collector.collectTree(for: pid)
-            let captureDuration = Date().timeIntervalSince(captureStart)
-            print(String(format: "Captured accessibility tree (%@) in %.3f s", name, captureDuration))
+            let tree = try Timing.measure("Captured accessibility tree (\(name))") {
+                try collector.collectTree(for: pid)
+            }
 
             for rendererDescriptor in renderers {
                 let renderer = rendererDescriptor.makeRenderer(configuration)
 
-                let renderStart = Date()
-                let data = try renderer.render(node: tree)
-                let renderDuration = Date().timeIntervalSince(renderStart)
                 let outputVariant = name + rendererDescriptor.suffix
-                print(String(format: "Rendered accessibility tree (%@) in %.3f s", outputVariant, renderDuration))
+
+                let data = try Timing.measure("Rendered accessibility tree (\(outputVariant))") {
+                    try renderer.render(node: tree)
+                }
 
                 let fileURL = try prepareOutputURL(baseName: baseName, variant: outputVariant, fileExtension: rendererDescriptor.fileExtension)
                 try data.write(to: fileURL)

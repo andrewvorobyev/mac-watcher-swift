@@ -31,27 +31,31 @@ struct ScreenshotMain {
         let pid = pid_t(pidValue)
         let baseName = ProcessUtilities.resolveAppName(for: pid)
 
-        guard let window = try primaryWindow(for: pid) else {
-            throw ScreenshotError.noVisibleWindows
+        let pngData = try Timing.measure("Captured screenshot") { () throws -> Data in
+            guard let window = try primaryWindow(for: pid) else {
+                throw ScreenshotError.noVisibleWindows
+            }
+
+            guard let image = CGWindowListCreateImage(.null,
+                                                      [.optionIncludingWindow],
+                                                      window.id,
+                                                      [.boundsIgnoreFraming, .bestResolution]) else {
+                throw ScreenshotError.captureFailed
+            }
+
+            let bitmapRep = NSBitmapImageRep(cgImage: image)
+            guard let png = bitmapRep.representation(using: .png, properties: [:]) else {
+                throw ScreenshotError.encodingFailed
+            }
+            return png
         }
 
-        guard let image = CGWindowListCreateImage(.null,
-                                                  [.optionIncludingWindow],
-                                                  window.id,
-                                                  [.boundsIgnoreFraming, .bestResolution]) else {
-            throw ScreenshotError.captureFailed
+        try Timing.measure("Wrote screenshot") {
+            let outputDirectory = try ProcessUtilities.outputDirectoryURL()
+            let fileURL = outputDirectory.appendingPathComponent("\(baseName)-screenshot.png")
+            try pngData.write(to: fileURL, options: .atomic)
+            print("Screenshot saved to \(fileURL.path)")
         }
-
-        let bitmapRep = NSBitmapImageRep(cgImage: image)
-        guard let pngData = bitmapRep.representation(using: .png, properties: [:]) else {
-            throw ScreenshotError.encodingFailed
-        }
-
-        let outputDirectory = try ProcessUtilities.outputDirectoryURL()
-        let fileURL = outputDirectory.appendingPathComponent("\(baseName)-screenshot.png")
-        try pngData.write(to: fileURL, options: .atomic)
-
-        print("Screenshot saved to \(fileURL.path)")
     }
 
     private static func primaryWindow(for pid: pid_t) throws -> (id: CGWindowID, bounds: CGRect)? {

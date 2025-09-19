@@ -16,18 +16,8 @@ struct WatcherMain {
 
         let pid = pid_t(pidValue)
 
-        let collector = AccessibilityTreeCollector()
-
         do {
-            let captureStart = Date()
-            let tree = try collector.collectTree(for: pid)
-            let captureDuration = Date().timeIntervalSince(captureStart)
-            print(String(format: "Captured accessibility tree in %.3f s", captureDuration))
-
-            let renderStart = Date()
-            try renderVariants(for: pid, tree: tree)
-            let renderDuration = Date().timeIntervalSince(renderStart)
-            print(String(format: "Rendered accessibility tree variants in %.3f s", renderDuration))
+            try renderVariants(for: pid)
         } catch let error as AccessibilityCollectorError {
             logError(error.description)
             exit(EXIT_FAILURE)
@@ -37,15 +27,26 @@ struct WatcherMain {
         }
     }
 
-    private static func renderVariants(for pid: pid_t, tree: AccessibilityNode) throws {
-        let variants: [(name: String, configuration: YAMLAccessibilityTreeRenderer.Configuration)] = [
+    private static func renderVariants(for pid: pid_t) throws {
+        let variants: [(name: String, configuration: AccessibilityTreeConfiguration)] = [
             ("llm", .llm),
             ("all", .all)
         ]
 
         for (name, configuration) in variants {
+            let collector = AccessibilityTreeCollector(configuration: configuration)
+
+            let captureStart = Date()
+            let tree = try collector.collectTree(for: pid)
+            let captureDuration = Date().timeIntervalSince(captureStart)
+            print(String(format: "Captured accessibility tree (%@) in %.3f s", name, captureDuration))
+
             let renderer = YAMLAccessibilityTreeRenderer(configuration: configuration)
+
+            let renderStart = Date()
             let data = try renderer.render(node: tree)
+            let renderDuration = Date().timeIntervalSince(renderStart)
+            print(String(format: "Rendered accessibility tree (%@) in %.3f s", name, renderDuration))
 
             let fileURL = try prepareOutputURL(for: pid, variant: name)
             try data.write(to: fileURL)

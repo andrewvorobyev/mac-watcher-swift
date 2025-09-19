@@ -20,7 +20,12 @@ Accessibility API allows observing changes: https://chatgpt.com/share/68cc4405-5
 - Dynamic sites. E.g. counters, SVG animations, ads banners etc.
 - Long content on the websites, potentially hidden under the elements.
 - User scrolling fast and internally paying attention to specific things, while the model will likely get the entire document.
+- Fast switching across apps / tabs. Probably need a serios caching layer.
+- Tabs / apps with video stream (e.g. google meet).
 - Do we need to mix ATs with screenshots to better percept the layout?
 - Multitasking
 
 - Capturing a tree of Youtube page is slow
+
+- Need to limit capturing to visible elements only. Currently I'm capturing menus content as well (including the top of the screen menu bar).
+

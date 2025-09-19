@@ -1,6 +1,5 @@
 import Foundation
 
-@main
 struct ObserveMain {
     static func main() {
         let arguments = CommandLine.arguments
@@ -22,3 +21,5 @@ struct ObserveMain {
         print(message)
     }
 }
+
+ObserveMain.main()

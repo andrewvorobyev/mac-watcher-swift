@@ -95,14 +95,27 @@ final class AccessibilityProcessObserver {
         if let identifier = copyAttribute(element: element, attribute: kAXIdentifierAttribute as CFString) {
             details.append("id=\(identifier)")
         }
-        if let title = copyAttribute(element: element, attribute: kAXTitleAttribute as CFString) {
+
+        if let title = normalizedAttribute(element: element, attribute: kAXTitleAttribute as CFString) {
             details.append("title=\(title)")
-        } else if let value = copyAttribute(element: element, attribute: kAXValueAttribute as CFString) {
+        }
+
+        if let value = normalizedAttribute(element: element, attribute: kAXValueAttribute as CFString) {
             details.append("value=\(value)")
+        }
+
+        if let description = normalizedAttribute(element: element, attribute: kAXDescriptionAttribute as CFString) {
+            details.append("description=\(description)")
         }
 
         logger.append(notification: notification as String,
                       details: details.isEmpty ? nil : details.joined(separator: ", "))
+    }
+
+    private func normalizedAttribute(element: AXUIElement, attribute: CFString) -> String? {
+        guard let raw = copyAttribute(element: element, attribute: attribute) else { return nil }
+        let trimmed = raw.trimmingCharacters(in: .whitespacesAndNewlines)
+        return trimmed.isEmpty ? nil : trimmed
     }
 
     private func copyAttribute(element: AXUIElement, attribute: CFString) -> String? {
@@ -112,6 +125,9 @@ final class AccessibilityProcessObserver {
 
         if CFGetTypeID(unwrapped) == AXValueGetTypeID() {
             return String(describing: unwrapped)
+        }
+        if let attributed = unwrapped as? NSAttributedString {
+            return attributed.string
         }
         return (unwrapped as AnyObject) as? String ?? String(describing: unwrapped)
     }

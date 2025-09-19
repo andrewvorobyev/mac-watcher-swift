@@ -12,3 +12,9 @@ observe-brave:
 
 observe-iterm:
 	swift run -c release observe $$(pgrep -x "iTerm2" | head -n 1)
+
+screenshot-brave:
+	swift run -c release screenshot $$(pgrep -x "Brave Browser" | head -n 1)
+
+screenshot-iterm:
+	swift run -c release screenshot $$(pgrep -x "iTerm2" | head -n 1)

@@ -35,6 +35,24 @@
             "name": "Release capture",
             "program": "${workspaceFolder:mac-watcher-swift}/.build/release/capture",
             "preLaunchTask": "swift: Build Release capture"
+        },
+        {
+            "type": "swift",
+            "request": "launch",
+            "args": [],
+            "cwd": "${workspaceFolder:mac-watcher-swift}",
+            "name": "Debug screenshot",
+            "program": "${workspaceFolder:mac-watcher-swift}/.build/debug/screenshot",
+            "preLaunchTask": "swift: Build Debug screenshot"
+        },
+        {
+            "type": "swift",
+            "request": "launch",
+            "args": [],
+            "cwd": "${workspaceFolder:mac-watcher-swift}",
+            "name": "Release screenshot",
+            "program": "${workspaceFolder:mac-watcher-swift}/.build/release/screenshot",
+            "preLaunchTask": "swift: Build Release screenshot"
         }
     ]
 }

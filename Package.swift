@@ -7,11 +7,13 @@ let package = Package(
     name: "mac-watcher-swift",
     products: [
         .executable(name: "capture", targets: ["capture"]),
-        .executable(name: "observe", targets: ["observe"])
+        .executable(name: "observe", targets: ["observe"]),
+        .executable(name: "screenshot", targets: ["screenshot"])
     ],
     targets: [
         .target(name: "CaptureSupport"),
         .executableTarget(name: "capture", dependencies: ["CaptureSupport"]),
-        .executableTarget(name: "observe", dependencies: ["CaptureSupport"])
+        .executableTarget(name: "observe", dependencies: ["CaptureSupport"]),
+        .executableTarget(name: "screenshot", dependencies: ["CaptureSupport"])
     ]
 )

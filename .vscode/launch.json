@@ -5,18 +5,36 @@
             "request": "launch",
             "args": [],
             "cwd": "${workspaceFolder:mac-watcher-swift}",
-            "name": "Debug watcher",
-            "program": "${workspaceFolder:mac-watcher-swift}/.build/debug/watcher",
-            "preLaunchTask": "swift: Build Debug watcher"
+            "name": "Debug observe",
+            "program": "${workspaceFolder:mac-watcher-swift}/.build/debug/observe",
+            "preLaunchTask": "swift: Build Debug observe"
         },
         {
             "type": "swift",
             "request": "launch",
             "args": [],
             "cwd": "${workspaceFolder:mac-watcher-swift}",
-            "name": "Release watcher",
-            "program": "${workspaceFolder:mac-watcher-swift}/.build/release/watcher",
-            "preLaunchTask": "swift: Build Release watcher"
+            "name": "Release observe",
+            "program": "${workspaceFolder:mac-watcher-swift}/.build/release/observe",
+            "preLaunchTask": "swift: Build Release observe"
+        },
+        {
+            "type": "swift",
+            "request": "launch",
+            "args": [],
+            "cwd": "${workspaceFolder:mac-watcher-swift}",
+            "name": "Debug capture",
+            "program": "${workspaceFolder:mac-watcher-swift}/.build/debug/capture",
+            "preLaunchTask": "swift: Build Debug capture"
+        },
+        {
+            "type": "swift",
+            "request": "launch",
+            "args": [],
+            "cwd": "${workspaceFolder:mac-watcher-swift}",
+            "name": "Release capture",
+            "program": "${workspaceFolder:mac-watcher-swift}/.build/release/capture",
+            "preLaunchTask": "swift: Build Release capture"
         }
     ]
 }

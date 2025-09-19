@@ -6,12 +6,11 @@ import PackageDescription
 let package = Package(
     name: "mac-watcher-swift",
     products: [
-        .executable(name: "watcher", targets: ["watcher"]),
+        .executable(name: "capture", targets: ["capture"]),
+        .executable(name: "observe", targets: ["observe"])
     ],
     targets: [
-        // Targets are the basic building blocks of a package, defining a module or a test suite.
-        // Targets can depend on other targets in this package and products from dependencies.
-        .executableTarget(
-            name: "watcher"),
+        .executableTarget(name: "capture"),
+        .executableTarget(name: "observe")
     ]
 )

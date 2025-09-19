@@ -1,11 +1,12 @@
 import Foundation
 import AppKit
 
-struct WatcherMain {
+@main
+struct CaptureMain {
     static func main() {
         let arguments = CommandLine.arguments
         guard arguments.count == 2 else {
-            logError("Usage: watcher <pid>")
+            logError("Usage: capture <pid>")
             exit(EXIT_FAILURE)
         }
 
@@ -110,5 +111,3 @@ private struct RendererDescriptor {
     let fileExtension: String
     let makeRenderer: (AccessibilityTreeConfiguration) -> AccessibilityTreeRenderer
 }
-
-WatcherMain.main()

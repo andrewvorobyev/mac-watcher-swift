@@ -50,4 +50,3 @@ Accessibility API allows observing changes: https://chatgpt.com/share/68cc4405-5
 ## Prompt and history compaction by competitors
 
 - [Codex](./codex-report.md)
-- [Claude](./claude-report.md)

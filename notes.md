@@ -47,3 +47,7 @@ Accessibility API allows observing changes: https://chatgpt.com/share/68cc4405-5
 - github.com workflow log (simple, expanded): 3.5K, 0.2s
 - youtube.com video opened + comments: 15K, 0.7s
 
+## Prompt and history compaction by competitors
+
+- [Codex](./codex-report.md)
+- [Claude](./claude-report.md)

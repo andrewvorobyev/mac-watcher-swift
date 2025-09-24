@@ -32,6 +32,14 @@ struct WindowMeta {
     app: String,
 }
 
+#[derive(Debug, Clone)]
+pub struct WindowCaptureTarget {
+    pub pid: u32,
+    pub window_id: u32,
+    pub window_title: String,
+    pub app_name: String,
+}
+
 fn ensure_capture_ready() -> Result<(), String> {
     static NS_APP_INIT: OnceLock<()> = OnceLock::new();
     NS_APP_INIT.get_or_init(|| unsafe {
@@ -90,7 +98,7 @@ pub fn list_targets() -> Result<Vec<String>, String> {
     Ok(descriptions)
 }
 
-pub fn capture_pid_window(pid: u32, output_path: &Path) -> Result<(), String> {
+pub fn prepare_window_capture(pid: u32) -> Result<WindowCaptureTarget, String> {
     ensure_capture_ready()?;
 
     if pid == 0 {
@@ -106,33 +114,41 @@ pub fn capture_pid_window(pid: u32, output_path: &Path) -> Result<(), String> {
     let targets = scap::get_all_targets();
     eprintln!("[watcher] fetched {} capture targets", targets.len());
 
-    let mut selected_window: Option<(String, u32, WindowMeta)> = None;
-
     for target in targets.into_iter() {
         if let Target::Window(window) = target {
             if let Some(meta) = window_map.get(&window.id) {
                 if meta.pid == pid {
+                    let title = window.title.trim();
+                    let window_title = if title.is_empty() {
+                        meta.app.clone()
+                    } else {
+                        title.to_string()
+                    };
+
                     eprintln!(
-                        "[watcher] matched PID {} with window '{}' (id={}) owned by {}",
-                        pid, window.title, window.id, meta.app
+                        "[watcher] prepared capture for PID {} -> window '{}' (id={})",
+                        pid, window_title, window.id
                     );
-                    selected_window = Some((window.title.clone(), window.id, meta.clone()));
-                    break;
+
+                    return Ok(WindowCaptureTarget {
+                        pid: meta.pid,
+                        window_id: window.id,
+                        window_title,
+                        app_name: meta.app.clone(),
+                    });
                 }
             }
         }
     }
 
-    let (window_title, window_id, window_meta) = selected_window.ok_or_else(|| {
-        eprintln!("[watcher] no window target matched PID {}", pid);
-        format!("No captureable window found for PID {}", pid)
-    })?;
+    Err(format!(
+        "No captureable window found for PID {}. Ensure the app has a visible window.",
+        pid
+    ))
+}
 
+pub fn capture_window(window_id: u32, output_path: &Path) -> Result<(), String> {
     let image = capture_window_image(window_id)?;
-    eprintln!(
-        "[watcher] captured window '{}' (pid={}, app='{}', id={})",
-        window_title, pid, window_meta.app, window_id
-    );
 
     image
         .save(output_path)

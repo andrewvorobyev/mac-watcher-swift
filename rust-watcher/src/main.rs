@@ -6,6 +6,8 @@ mod proc;
 use clap::Parser;
 use std::fs;
 use std::path::Path;
+use std::thread;
+use std::time::{Duration, SystemTime, UNIX_EPOCH};
 
 #[derive(Parser, Debug)]
 #[command(
@@ -50,12 +52,53 @@ fn main() {
         std::process::exit(1);
     }
 
-    let screenshot_path = output_dir.join(format!("{}.png", name));
+    let mut capture_target = match proc::prepare_window_capture(args.pid) {
+        Ok(target) => {
+            println!(
+                "Tracking PID {} window '{}' (id={}) owned by {}",
+                target.pid, target.window_title, target.window_id, target.app_name
+            );
+            target
+        }
+        Err(err) => {
+            eprintln!("Unable to prepare capture: {}", err);
+            std::process::exit(1);
+        }
+    };
 
-    if let Err(err) = proc::capture_pid_window(args.pid, &screenshot_path) {
-        eprintln!("Failed to capture screenshot: {}", err);
-        std::process::exit(1);
+    println!("Beginning capture loop. Press Ctrl+C to stop.");
+
+    loop {
+        let timestamp = SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .unwrap_or_default()
+            .as_secs();
+        let screenshot_path = output_dir.join(format!("{}-{}.png", name, timestamp));
+
+        match proc::capture_window(capture_target.window_id, &screenshot_path) {
+            Ok(()) => println!("Saved screenshot to {}", screenshot_path.display()),
+            Err(err) => {
+                eprintln!(
+                    "Capture failed for window {} (id={}): {}",
+                    capture_target.window_title, capture_target.window_id, err
+                );
+
+                match proc::prepare_window_capture(args.pid) {
+                    Ok(new_target) => {
+                        println!(
+                            "Re-acquired PID {} window '{}' (id={})",
+                            new_target.pid, new_target.window_title, new_target.window_id
+                        );
+                        capture_target = new_target;
+                        continue;
+                    }
+                    Err(prepare_err) => {
+                        eprintln!("Unable to re-acquire window: {}", prepare_err);
+                    }
+                }
+            }
+        }
+
+        thread::sleep(Duration::from_secs(1));
     }
-
-    println!("Saved screenshot to {}", screenshot_path.display());
 }

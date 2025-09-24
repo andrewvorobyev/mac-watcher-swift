@@ -1,9 +1,13 @@
 use rmcp::{
+    model::CallToolRequestParam,
     service::QuitReason,
     transport::{ConfigureCommandExt, TokioChildProcess},
     ServiceExt,
 };
+use serde_json::json;
 use tokio::{pin, process::Command, signal};
+
+const TARGET_TOOL: &str = "list_pages";
 
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn std::error::Error>> {
@@ -32,6 +36,27 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                 None => println!("- {}", tool.name),
             }
         }
+    }
+
+    if tools.iter().any(|tool| tool.name == TARGET_TOOL) {
+        println!("\nCalling `{TARGET_TOOL}`...");
+        match running_service
+            .call_tool(CallToolRequestParam {
+                name: TARGET_TOOL.into(),
+                arguments: Some(json!({}).as_object().cloned().unwrap_or_default()),
+            })
+            .await
+        {
+            Ok(result) => match serde_json::to_string_pretty(&result) {
+                Ok(rendered) => println!("Tool result:\n{rendered}"),
+                Err(err) => println!(
+                    "Tool returned result but formatting as JSON failed: {err}\n{result:#?}"
+                ),
+            },
+            Err(err) => println!("Tool call failed: {err}"),
+        }
+    } else {
+        println!("\nTool `{TARGET_TOOL}` not found on this server.");
     }
 
     let cancel_token = running_service.cancellation_token();

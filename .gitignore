@@ -1,6 +1,7 @@
 # app
 
 swift/output
+swift/.build
 
 # rest
 
@@ -13,3 +14,6 @@ DerivedData/
 .swiftpm/xcode/package.xcworkspace/contents.xcworkspacedata
 .netrc
 
+# rust
+
+rust/target

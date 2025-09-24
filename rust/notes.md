@@ -5,4 +5,7 @@ Starts it's own browser by default. Another instance can be used when starting M
 
 The started browser seems very sluggish with pages loading very slowly, scroll laging.
 
+The user will not be logged in into anything in this new opened browser.
+
 I.e. the browser seems unusable by the human.
+

@@ -17,3 +17,4 @@ DerivedData/
 # rust
 
 chrome-dev-tools-mcp/target
+rust-watcher/target

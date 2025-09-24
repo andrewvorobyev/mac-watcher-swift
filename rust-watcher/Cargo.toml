@@ -7,5 +7,7 @@ edition = "2024"
 clap = { version = "4.5", features = ["derive"] }
 core-foundation = "0.9"
 core-graphics = "0.23"
+cocoa = "0.25"
 image = { version = "0.25", default-features = false, features = ["png"] }
+objc = "0.2"
 scap = "0.1.0-beta.1"

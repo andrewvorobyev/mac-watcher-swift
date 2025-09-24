@@ -50,5 +50,12 @@ fn main() {
         std::process::exit(1);
     }
 
-    // TODO: Replace with scap-powered capture in a follow-up change.
+    let screenshot_path = output_dir.join(format!("{}.png", name));
+
+    if let Err(err) = proc::capture_pid_window(args.pid, &screenshot_path) {
+        eprintln!("Failed to capture screenshot: {}", err);
+        std::process::exit(1);
+    }
+
+    println!("Saved screenshot to {}", screenshot_path.display());
 }

@@ -1705,9 +1705,11 @@ name = "watcher"
 version = "0.1.0"
 dependencies = [
  "clap",
+ "cocoa",
  "core-foundation",
  "core-graphics",
  "image",
+ "objc",
  "scap",
 ]
 

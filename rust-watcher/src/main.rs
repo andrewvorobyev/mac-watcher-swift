@@ -8,7 +8,11 @@ use std::fs;
 use std::path::Path;
 
 #[derive(Parser, Debug)]
-#[command(about = "Resolve a process ID to its application name", version, author)]
+#[command(
+    about = "Resolve a process ID to its application name",
+    version,
+    author
+)]
 struct Cli {
     /// Numeric process identifier (PID) to inspect
     pid: u32,

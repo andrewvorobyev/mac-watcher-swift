@@ -1705,6 +1705,8 @@ name = "watcher"
 version = "0.1.0"
 dependencies = [
  "clap",
+ "core-foundation",
+ "core-graphics",
  "image",
  "scap",
 ]

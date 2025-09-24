@@ -6,3 +6,5 @@ edition = "2021"
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
 [dependencies]
+rmcp = { version = "0.7.0", features = ["client", "transport-child-process"] }
+tokio = { version = "1.47", features = ["macros", "process", "signal", "rt-multi-thread"] }

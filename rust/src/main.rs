@@ -20,6 +20,20 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     println!("Chrome DevTools MCP server launched. Press Ctrl+C to stop.");
 
+    let tools = running_service.list_all_tools().await?;
+    if tools.is_empty() {
+        println!("Server reported no tools.");
+    } else {
+        println!("Tools exposed by the server:");
+        for tool in &tools {
+            let summary = tool.title.as_deref().or(tool.description.as_deref());
+            match summary {
+                Some(text) => println!("- {} — {}", tool.name, text),
+                None => println!("- {}", tool.name),
+            }
+        }
+    }
+
     let cancel_token = running_service.cancellation_token();
     let wait_future = running_service.waiting();
     pin!(wait_future);

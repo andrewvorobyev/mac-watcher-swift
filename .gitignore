@@ -19,3 +19,8 @@ DerivedData/
 chrome-dev-tools-mcp/target
 rust-watcher/target
 rust-watcher/output
+
+# python
+
+__pycache__
+

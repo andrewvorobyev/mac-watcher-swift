@@ -1,8 +1,10 @@
-from .utils import get_greeting
+from watcher.utils import get_greeting
+from google import genai
+import os
 
 
 def main() -> None:
-    """Print a friendly greeting."""
+    print(os.environ["GOOGLE_API_KEY"])
     print(get_greeting())
 
 

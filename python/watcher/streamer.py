@@ -8,6 +8,7 @@ from dataclasses import dataclass
 from typing import Any, AsyncIterator, Protocol
 
 from google import genai
+from google.genai.types import LiveConnectConfigDict
 
 from watcher.frames import FrameSource
 
@@ -15,31 +16,24 @@ from watcher.frames import FrameSource
 LOGGER = logging.getLogger(__name__)
 
 
-@dataclass(frozen=True)
-class LiveSessionConfig:
-    """Configuration forwarded to the Gemini live session."""
-
-    response_modalities: tuple[str, ...] = ("TEXT",)
-
-    def as_dict(self) -> dict[str, object]:
-        return {"response_modalities": list(self.response_modalities)}
-
 
 @dataclass(slots=True)
 class StreamerOptions:
     """Control how the realtime session behaves."""
 
     model: str
-    config: LiveSessionConfig
+    config: LiveConnectConfigDict
     initial_text: str | None = None
 
 
 class LiveSession(Protocol):
     async def send(self, *, input: object, end_of_turn: bool | None = None) -> None:
         """Dispatch a payload to the Gemini realtime session."""
+        raise NotImplementedError
 
     def receive(self) -> AsyncIterator[Any]:
         """Yield streaming responses from the Gemini session."""
+        raise NotImplementedError
 
 
 class GeminiRealtimeStreamer:
@@ -53,7 +47,7 @@ class GeminiRealtimeStreamer:
         async with source:
             async with self._client.aio.live.connect(
                 model=self._options.model,
-                config=self._options.config.as_dict(),
+                config=self._options.config,
             ) as session:
                 if self._options.initial_text:
                     await session.send(input=self._options.initial_text, end_of_turn=True)
@@ -83,7 +77,6 @@ class GeminiRealtimeStreamer:
 
 __all__ = [
     "GeminiRealtimeStreamer",
-    "LiveSessionConfig",
     "StreamerOptions",
 ]
 

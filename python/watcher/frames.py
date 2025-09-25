@@ -177,7 +177,7 @@ class CameraFrameSource(FrameSource):
         if not ret:
             LOGGER.warning("Camera returned no frame; ending stream.")
             return None
-        return frame
+        return frame # type: ignore
 
 
 class ScreenFrameSource(FrameSource):

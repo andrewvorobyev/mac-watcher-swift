@@ -53,8 +53,8 @@ class GeminiRealtimeStreamer:
                     await session.send(input=self._options.initial_text, end_of_turn=True)
 
                 async with asyncio.TaskGroup() as group:
-                    group.create_task(self._forward_frames(session, source))
-                    group.create_task(self._consume_responses(session))
+                    group.create_task(self._forward_frames(session, source)) # pyright: ignore[reportArgumentType]
+                    group.create_task(self._consume_responses(session)) # pyright: ignore[reportArgumentType]
 
     async def _forward_frames(self, session: LiveSession, source: FrameSource) -> None:
         try:

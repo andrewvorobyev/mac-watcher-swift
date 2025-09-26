@@ -1,6 +1,5 @@
-from pathlib import Path
 import shutil
-
+from pathlib import Path
 
 REPO_ROOT = Path(__file__).parent.parent.resolve()
 assert (REPO_ROOT / "pyproject.toml").exists(), "sanity check"

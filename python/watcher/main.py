@@ -9,7 +9,7 @@ from google import genai
 from google.genai.types import LiveConnectConfigDict, Modality
 
 from watcher.frames import CaptureMode, FrameSourceSpec, create_frame_source
-from watcher.streamer import GeminiRealtimeStreamer, StreamerOptions
+from watcher.streamer import GeminiRealtimeStreamer, LiveApiMode, StreamerOptions
 from watcher.utils import OUT_PATH, PROMPTS_PATH
 
 LOGGER = logging.getLogger(__name__)
@@ -32,7 +32,8 @@ async def main() -> None:
         model=model,
         config=LiveConnectConfigDict(response_modalities=[Modality.TEXT]),
         initial_text=prompt,
-        frame_dump_dir=OUT_PATH
+        frame_dump_dir=OUT_PATH,
+        api_mode=LiveApiMode.REALTIME,
     )
 
     client = genai.Client()

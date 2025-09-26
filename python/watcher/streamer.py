@@ -5,6 +5,7 @@ import base64
 import logging
 import time
 from dataclasses import dataclass
+from enum import StrEnum
 from pathlib import Path
 
 from google import genai
@@ -16,6 +17,11 @@ from watcher.live_session import LiveSession
 LOGGER = logging.getLogger(__name__)
 
 
+class LiveApiMode(StrEnum):
+    REALTIME = "REALTIME"
+    SEQUENTIAL = "SEQUENTIAL"
+
+
 @dataclass(slots=True)
 class StreamerOptions:
     """Control how the realtime session behaves."""
@@ -24,6 +30,7 @@ class StreamerOptions:
     config: LiveConnectConfigDict
     initial_text: str | None = None
     frame_dump_dir: Path | None = None
+    api_mode: LiveApiMode = LiveApiMode.REALTIME
 
     def __post_init__(self) -> None:
         if isinstance(self.frame_dump_dir, str):
@@ -55,9 +62,17 @@ class GeminiRealtimeStreamer:
     async def _forward_frames(self, session: LiveSession, source: FrameSource) -> None:
         try:
             async for payload in source.frames():
-                await session.send_realtime_input(media=payload)
                 if self._options.frame_dump_dir is not None:
                     await asyncio.to_thread(self._dump_frame, payload)
+
+                match self._options.api_mode:
+                    case LiveApiMode.REALTIME:
+                        await session.send_realtime_input(media=payload)
+                    case LiveApiMode.SEQUENTIAL:
+                        turns = [{"role": "user", "parts": [{"inline_data": payload}]}]
+                        await session.send_client_content(
+                            turns=turns, turn_complete=True
+                        )
         except asyncio.CancelledError:
             raise
 

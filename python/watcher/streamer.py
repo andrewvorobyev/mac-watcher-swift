@@ -80,7 +80,7 @@ class RealtimeStreamer(Streamer):
 @dataclass(frozen=True)
 class SequentialStreamer(Streamer):
     opts: StreamerOptions
-    frame_q: asyncio.Queue[FramePayload] = field(default_factory=asyncio.Queue)
+    frame_q: asyncio.Queue[FramePayload | None] = field(default_factory=asyncio.Queue)
 
     async def stream(self, source: FrameSource) -> None:
         async with source:
@@ -88,21 +88,54 @@ class SequentialStreamer(Streamer):
                 model=self.opts.model,
                 config=self.opts.config,
             ) as session:
-                if self.opts.model_instructions:
-                    await session.send_client_content(
-                        turns=[
-                            {
-                                "role": "user",
-                                "parts": [{"text": self.opts.model_instructions}],
-                            }
-                        ],
-                        turn_complete=False,
-                    )
+                async with asyncio.TaskGroup() as group:
+                    group.create_task(self._enqueue_frames(source))
+                    group.create_task(self._loop(session))
 
-                async for payload in source.frames():
-                    await session.send_client_content(
-                        turns=[{"role": "user", "parts": [{"inline_data": payload}]}],
-                        turn_complete=True,
-                    )
-                
+    async def _loop(self, session: LiveSession) -> None:
+        if self.opts.model_instructions:
+            await session.send_client_content(
+                turns=[
+                    {
+                        "role": "user",
+                        "parts": [{"text": self.opts.model_instructions}],
+                    }
+                ],
+                turn_complete=False,
+            )
+
+        while True:
+            payload = self._pull_latest_frame()
+
+    async def _enqueue_frames(self, source: FrameSource) -> None:
+        try:
+            async for payload in source.frames():
+                await self.frame_q.put(payload)
+        finally:
+            await asyncio.shield(self.frame_q.put(None))
+
+    async def _pull_latest_frame(self) -> FramePayload | None:
+        item = await self.frame_q.get()
+        if item is None:
+            return None
+
+        latest = item
+        sentinel_seen = False
+
+        while True:
+            try:
+                item = self.frame_q.get_nowait()
+            except asyncio.QueueEmpty:
+                break
+
+            if item is None:
+                sentinel_seen = True
+                continue
+
+            latest = item
+
+        if sentinel_seen:
+            await asyncio.shield(self.frame_q.put(None))
+
+        return latest
 

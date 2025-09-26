@@ -6,7 +6,7 @@ import asyncio
 import logging
 
 from google import genai
-from google.genai.types import LiveConnectConfigDict
+from google.genai.types import LiveConnectConfigDict, Modality
 
 from watcher.frames import CaptureMode, FrameSourceSpec, create_frame_source
 from watcher.streamer import GeminiRealtimeStreamer, StreamerOptions
@@ -23,15 +23,15 @@ FRAME_SOURCE_SPEC = FrameSourceSpec(
     monitor_index=1,
 )
 
-MODEL_ID = "models/gemini-2.0-flash-live-001"
-INITIAL_PROMPT: str | None = "Output short description of what you see on the screen."
+MODEL_ID = "gemini-live-2.5-flash-preview"  # Half-cascade audio (https://ai.google.dev/gemini-api/docs/live)
+INITIAL_PROMPT: str | None = "Continuosly output short description of what you see on the screen as the frames appear."
 
 
 async def run_async() -> None:
-    client = genai.Client(http_options={"api_version": "v1beta"})
+    client = genai.Client()
     options = StreamerOptions(
         model=MODEL_ID,
-        config=LiveConnectConfigDict(),
+        config=LiveConnectConfigDict(response_modalities=[Modality.TEXT]),
         initial_text=INITIAL_PROMPT,
     )
     frame_source = create_frame_source(FRAME_SOURCE_SPEC)

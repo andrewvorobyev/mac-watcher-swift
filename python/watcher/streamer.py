@@ -48,6 +48,8 @@ class GeminiRealtimeStreamer:
         try:
             async for payload in source.frames():
                 await session.send(input=payload)
+                turns = [{"role": "user", "parts": [{"text": "Describe the screen briefly"}]}]
+                await session.send_client_content(turns=turns, turn_complete=True)
                 LOGGER.info("Frame sent")
         except asyncio.CancelledError:
             raise

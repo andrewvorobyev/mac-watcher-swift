@@ -122,11 +122,18 @@ class SequentialStreamer(Streamer):
                 turn_complete=True,
             )
 
+            ntokens: int | None = None
+
             async for response in session.receive():
                 if response.text is not None:
                     print(response.text, end="", flush=True)
 
+                if response.usage_metadata:
+                    ntokens = response.usage_metadata.total_token_count
+
             print()
+            if ntokens is not None:
+                print(f"TOKEN USAGE: {ntokens}")
 
     async def _enqueue_frames(self, source: FrameSource) -> None:
         try:

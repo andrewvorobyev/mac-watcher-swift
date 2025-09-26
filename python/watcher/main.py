@@ -15,39 +15,31 @@ from watcher.utils import OUT_PATH, PROMPTS_PATH
 LOGGER = logging.getLogger(__name__)
 
 
-FRAME_SOURCE_SPEC = FrameSourceSpec(
-    mode=CaptureMode.SCREEN,
-    fps=1.0,
-    max_dimension=1024,
-    jpeg_quality=85,
-    camera_index=0,
-    monitor_index=1,
-)
+async def main() -> None:
+    logging.basicConfig(level=logging.INFO)
 
-MODEL_ID = "gemini-live-2.5-flash-preview"  # Half-cascade audio (https://ai.google.dev/gemini-api/docs/live)
-INITIAL_PROMPT = (PROMPTS_PATH / "system.md").read_text()
-
-
-async def run_async() -> None:
-    client = genai.Client()
-    options = StreamerOptions(
-        model=MODEL_ID,
+    frame_source_spec = FrameSourceSpec(
+        mode=CaptureMode.SCREEN,
+        fps=1.0,
+        max_dimension=1024,
+        jpeg_quality=85,
+        camera_index=0,
+        monitor_index=1,
+    )
+    model = "gemini-live-2.5-flash-preview"  # Half-cascade audio (https://ai.google.dev/gemini-api/docs/live)
+    prompt = (PROMPTS_PATH / "system.md").read_text()
+    streamer_opts = StreamerOptions(
+        model=model,
         config=LiveConnectConfigDict(response_modalities=[Modality.TEXT]),
-        initial_text=INITIAL_PROMPT,
+        initial_text=prompt,
         frame_dump_dir=OUT_PATH
     )
-    frame_source = create_frame_source(FRAME_SOURCE_SPEC)
-    streamer = GeminiRealtimeStreamer(client=client, options=options)
+
+    client = genai.Client()
+    frame_source = create_frame_source(frame_source_spec)
+    streamer = GeminiRealtimeStreamer(client=client, options=streamer_opts)
     await streamer.stream(frame_source)
 
 
-def main() -> None:
-    logging.basicConfig(level=logging.INFO)
-    try:
-        asyncio.run(run_async())
-    except KeyboardInterrupt:
-        LOGGER.info("Interrupted by user; shutting down.")
-
-
 if __name__ == "__main__":
-    main()
+    asyncio.run(main())

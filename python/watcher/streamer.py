@@ -1,24 +1,14 @@
 """Gemini realtime streaming orchestration."""
 
-from __future__ import annotations
-
 import asyncio
 import logging
 from dataclasses import dataclass
-from typing import Any, AsyncIterator, Optional, Protocol, Sequence, Union
 
 from google import genai
-from google.genai.types import (
-    LiveConnectConfigDict,
-    ContentListUnion,
-    ContentListUnionDict,
-    LiveClientContentOrDict,
-    LiveClientRealtimeInputOrDict,
-    LiveClientToolResponseOrDict,
-    FunctionResponseOrDict,
-)
+from google.genai.types import LiveConnectConfigDict
 
 from watcher.frames import FrameSource
+from watcher.live_session import LiveSession
 
 
 LOGGER = logging.getLogger(__name__)
@@ -31,32 +21,6 @@ class StreamerOptions:
     model: str
     config: LiveConnectConfigDict
     initial_text: str | None = None
-
-
-class LiveSession(Protocol):
-    async def send(
-        self,
-        *,
-        input: Optional[
-            Union[
-                ContentListUnion,
-                ContentListUnionDict,
-                LiveClientContentOrDict,
-                LiveClientRealtimeInputOrDict,
-                LiveClientToolResponseOrDict,
-                FunctionResponseOrDict,
-                Sequence[FunctionResponseOrDict],
-            ]
-        ] = None,
-        end_of_turn: Optional[bool] = False,
-    ) -> None:
-        """Dispatch a payload to the Gemini realtime session."""
-        raise NotImplementedError
-
-    def receive(self) -> AsyncIterator[Any]:
-        """Yield streaming responses from the Gemini session."""
-        raise NotImplementedError
-
 
 class GeminiRealtimeStreamer:
     """Send frames from a source to Gemini Realtime and surface responses."""
@@ -103,9 +67,3 @@ class GeminiRealtimeStreamer:
                         print(text, end="", flush=True)
         except asyncio.CancelledError:
             raise
-
-
-__all__ = [
-    "GeminiRealtimeStreamer",
-    "StreamerOptions",
-]

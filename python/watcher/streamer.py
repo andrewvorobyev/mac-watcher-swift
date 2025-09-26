@@ -122,6 +122,10 @@ class SequentialStreamer(Streamer):
                 turn_complete=True,
             )
 
+            async for response in session.receive():
+                if response.text is not None:
+                    print(response.text, end="")
+
     async def _enqueue_frames(self, source: FrameSource) -> None:
         try:
             async for payload in source.frames():

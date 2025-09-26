@@ -36,7 +36,7 @@ async def main() -> None:
         mode=LiveApiMode.SEQUENTIAL,
         model=model,
         config=LiveConnectConfigDict(
-            response_modalities=[Modality.TEXT], tools=[tools.report_activity]
+            response_modalities=[Modality.TEXT] # , tools=[tools.report_activity]
         ),
         model_instructions=prompt
     ).build()

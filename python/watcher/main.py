@@ -11,6 +11,7 @@ from google.genai.types import LiveConnectConfigDict, Modality
 from watcher.frames import CaptureMode, FrameSourceSpec, create_frame_source
 from watcher.streamer import GeminiRealtimeStreamer, LiveApiMode, StreamerOptions
 from watcher.utils import OUT_PATH, PROMPTS_PATH
+from watcher import tools
 
 LOGGER = logging.getLogger(__name__)
 
@@ -30,10 +31,13 @@ async def main() -> None:
     prompt = (PROMPTS_PATH / "system.md").read_text()
     streamer_opts = StreamerOptions(
         model=model,
-        config=LiveConnectConfigDict(response_modalities=[Modality.TEXT]),
+        config=LiveConnectConfigDict(
+            response_modalities=[Modality.TEXT],
+            tools=[tools.report_activity]
+        ),
         initial_text=prompt,
         frame_dump_dir=OUT_PATH,
-        api_mode=LiveApiMode.REALTIME,
+        api_mode=LiveApiMode.SEQUENTIAL,
     )
 
     client = genai.Client()

@@ -1,13 +1,16 @@
 """Gemini realtime streaming orchestration."""
 
 import asyncio
+import base64
 import logging
+import time
 from dataclasses import dataclass
+from pathlib import Path
 
 from google import genai
 from google.genai.types import LiveConnectConfigDict
 
-from watcher.frames import FrameSource
+from watcher.frames import FramePayload, FrameSource
 from watcher.live_session import LiveSession
 
 LOGGER = logging.getLogger(__name__)
@@ -20,6 +23,11 @@ class StreamerOptions:
     model: str
     config: LiveConnectConfigDict
     initial_text: str | None = None
+    frame_dump_dir: Path | None = None
+
+    def __post_init__(self) -> None:
+        if isinstance(self.frame_dump_dir, str):
+            self.frame_dump_dir = Path(self.frame_dump_dir)
 
 
 class GeminiRealtimeStreamer:
@@ -51,8 +59,22 @@ class GeminiRealtimeStreamer:
                 turns = [{"role": "user", "parts": [{"text": "Describe the screen briefly"}]}]
                 await session.send_client_content(turns=turns, turn_complete=True)
                 LOGGER.info("Frame sent")
+                if self._options.frame_dump_dir is not None:
+                    await asyncio.to_thread(self._dump_frame, payload)
         except asyncio.CancelledError:
             raise
+
+    def _dump_frame(self, payload: FramePayload) -> None:
+        directory = self._options.frame_dump_dir
+        if directory is None:
+            return
+
+        path = directory / f"{time.time_ns()}.jpg"
+        try:
+            data = base64.b64decode(payload["data"], validate=True)
+            path.write_bytes(data)
+        except Exception:  # pragma: no cover - best-effort logging
+            LOGGER.exception("Failed to dump frame to %s", path)
 
     async def _consume_responses(self, session: LiveSession) -> None:
         try:

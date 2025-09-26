@@ -10,6 +10,7 @@ from google.genai.types import LiveConnectConfigDict, Modality
 
 from watcher.frames import CaptureMode, FrameSourceSpec, create_frame_source
 from watcher.streamer import GeminiRealtimeStreamer, StreamerOptions
+from watcher.utils import OUTPUT
 
 LOGGER = logging.getLogger(__name__)
 
@@ -33,6 +34,7 @@ async def run_async() -> None:
         model=MODEL_ID,
         config=LiveConnectConfigDict(response_modalities=[Modality.TEXT]),
         initial_text=INITIAL_PROMPT,
+        frame_dump_dir=OUTPUT
     )
     frame_source = create_frame_source(FRAME_SOURCE_SPEC)
     streamer = GeminiRealtimeStreamer(client=client, options=options)

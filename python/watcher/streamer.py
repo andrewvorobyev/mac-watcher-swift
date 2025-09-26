@@ -1,36 +1,22 @@
 """Gemini realtime streaming orchestration."""
 
 import asyncio
-import base64
 import logging
-import time
 from dataclasses import dataclass
 from enum import StrEnum
-from pathlib import Path
+from typing import Protocol
 
 from google import genai
 from google.genai.types import LiveConnectConfigDict
 
-from watcher.frames import FramePayload, FrameSource
+from watcher.frames import FrameSource
 from watcher.live_session import LiveSession
-
-from typing import Protocol
 
 LOGGER = logging.getLogger(__name__)
 
 
 class Streamer(Protocol):
-    async def stream(self, source: FrameSource) -> None:
-        ...
-
-
-@dataclass(frozen=True)
-class RealtimeStreamer(Streamer):
-    model: str
-    instructions: str | None = None
-
-    async def stream(self, source: FrameSource) -> None:
-        ...
+    async def stream(self, source: FrameSource) -> None: ...
 
 
 class LiveApiMode(StrEnum):
@@ -40,36 +26,27 @@ class LiveApiMode(StrEnum):
 
 @dataclass(slots=True)
 class StreamerOptions:
-    """Control how the realtime session behaves."""
-
+    client: genai.Client
+    mode: LiveApiMode
     model: str
     config: LiveConnectConfigDict
-    initial_text: str | None = None
-    frame_dump_dir: Path | None = None
-    api_mode: LiveApiMode = LiveApiMode.REALTIME
+    model_instructions: str | None = None
 
-    def __post_init__(self) -> None:
-        if isinstance(self.frame_dump_dir, str):
-            self.frame_dump_dir = Path(self.frame_dump_dir)
+    def build(self) -> "Streamer": ...
 
 
-class GeminiRealtimeStreamer:
-    """Send frames from a source to Gemini Realtime and surface responses."""
-
-    def __init__(self, *, client: genai.Client, options: StreamerOptions) -> None:
-        self._client = client
-        self._options = options
+@dataclass(frozen=True)
+class RealtimeStreamer(Streamer):
+    opts: StreamerOptions
 
     async def stream(self, source: FrameSource) -> None:
         async with source:
-            async with self._client.aio.live.connect(
-                model=self._options.model,
-                config=self._options.config,
+            async with self.opts.client.aio.live.connect(
+                model=self.opts.model,
+                config=self.opts.config,
             ) as session:
-                if self._options.initial_text:
-                    await session.send(
-                        input=self._options.initial_text, end_of_turn=True
-                    )
+                if self.opts.model_instructions:
+                    await session.send_realtime_input(text=self.opts.model_instructions)
 
                 async with asyncio.TaskGroup() as group:
                     group.create_task(self._forward_frames(session, source))
@@ -78,33 +55,10 @@ class GeminiRealtimeStreamer:
     async def _forward_frames(self, session: LiveSession, source: FrameSource) -> None:
         try:
             async for payload in source.frames():
-                if self._options.frame_dump_dir is not None:
-                    await asyncio.to_thread(self._dump_frame, payload)
-
-                match self._options.api_mode:
-                    case LiveApiMode.REALTIME:
-                        await session.send_realtime_input(media=payload)
-                        LOGGER.info("realtime input sent")
-                    case LiveApiMode.SEQUENTIAL:
-                        LOGGER.info("sequential input sent")
-                        turns = [{"role": "user", "parts": [{"inline_data": payload}]}]
-                        await session.send_client_content(
-                            turns=turns, turn_complete=True
-                        )
+                await session.send_realtime_input(media=payload)
+                LOGGER.info("realtime input sent")
         except asyncio.CancelledError:
             raise
-
-    def _dump_frame(self, payload: FramePayload) -> None:
-        directory = self._options.frame_dump_dir
-        if directory is None:
-            return
-
-        path = directory / f"{time.time_ns()}.jpg"
-        try:
-            data = base64.b64decode(payload["data"], validate=True)
-            path.write_bytes(data)
-        except Exception:  # pragma: no cover - best-effort logging
-            LOGGER.exception("Failed to dump frame to %s", path)
 
     async def _consume_responses(self, session: LiveSession) -> None:
         try:
@@ -116,3 +70,31 @@ class GeminiRealtimeStreamer:
                         print(text, end="", flush=True)
         except asyncio.CancelledError:
             raise
+
+
+@dataclass(frozen=True)
+class SequentialStreamer(Streamer):
+    opts: StreamerOptions
+
+    async def stream(self, source: FrameSource) -> None:
+        async with source:
+            async with self.opts.client.aio.live.connect(
+                model=self.opts.model,
+                config=self.opts.config,
+            ) as session:
+                if self.opts.model_instructions:
+                    await session.send_client_content(
+                        turns=[
+                            {
+                                "role": "user",
+                                "parts": [{"text": self.opts.model_instructions}],
+                            }
+                        ],
+                        turn_complete=False,
+                    )
+
+                async for payload in source.frames():
+                    await session.send_client_content(
+                        turns=[{"role": "user", "parts": [{"inline_data": payload}]}],
+                        turn_complete=True,
+                    )

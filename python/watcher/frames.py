@@ -1,14 +1,14 @@
 """Frame capture helpers for Gemini realtime streaming."""
 
-from __future__ import annotations
-
 import asyncio
 import base64
 import enum
 import logging
+import time
 from dataclasses import dataclass
+from pathlib import Path
 from types import TracebackType
-from typing import AsyncIterator, Literal, TypedDict
+from typing import AsyncIterator, Literal, Protocol, Self, TypedDict, runtime_checkable
 
 import cv2
 import mss
@@ -26,6 +26,27 @@ class FramePayload(TypedDict):
 
     mime_type: Literal["image/jpeg"]
     data: str
+
+
+@runtime_checkable
+class FrameSource(Protocol):
+    """Interface describing an asynchronous frame provider."""
+
+    async def __aenter__(self) -> Self: ...
+
+    async def __aexit__(
+        self,
+        exc_type: type[BaseException] | None,
+        exc: BaseException | None,
+        traceback: TracebackType | None,
+    ) -> bool | None: ...
+
+    async def frames(self) -> AsyncIterator[FramePayload]: ...
+
+    def dumping(self, directory: Path) -> "FrameSource":
+        """Wrap this source with frame dumping support."""
+
+        return FrameDumpingSource(self, directory)
 
 
 class CaptureMode(enum.StrEnum):
@@ -71,8 +92,8 @@ def encode_frame(
     return FramePayload(mime_type="image/jpeg", data=encoded)
 
 
-class FrameSource:
-    """Base class handling throttling and encoding for frame publishers."""
+class ManagedFrameSource(FrameSource):
+    """Concrete helper implementing throttling and encoding for sources."""
 
     def __init__(
         self,
@@ -96,7 +117,7 @@ class FrameSource:
         self._max_dimension = max_dimension
         self._jpeg_quality = jpeg_quality
 
-    async def __aenter__(self) -> FrameSource:
+    async def __aenter__(self) -> Self:
         await self._open()
         return self
 
@@ -134,7 +155,7 @@ class FrameSource:
         raise NotImplementedError
 
 
-class CameraFrameSource(FrameSource):
+class CameraFrameSource(ManagedFrameSource):
     """Capture frames from a webcam using OpenCV."""
 
     def __init__(
@@ -179,7 +200,7 @@ class CameraFrameSource(FrameSource):
         return frame  # type: ignore
 
 
-class ScreenFrameSource(FrameSource):
+class ScreenFrameSource(ManagedFrameSource):
     """Capture frames from the desktop using MSS."""
 
     def __init__(
@@ -226,6 +247,40 @@ class ScreenFrameSource(FrameSource):
         return frame
 
 
+class FrameDumpingSource(FrameSource):
+    """Wrapper that saves each produced frame to disk before yielding it."""
+
+    def __init__(self, source: FrameSource, directory: Path) -> None:
+        self._source = source
+        self._directory = Path(directory)
+
+    async def __aenter__(self) -> Self:
+        assert self._directory.exists()
+        await self._source.__aenter__()
+        return self
+
+    async def __aexit__(
+        self,
+        exc_type: type[BaseException] | None,
+        exc: BaseException | None,
+        traceback: TracebackType | None,
+    ) -> bool | None:
+        return await self._source.__aexit__(exc_type, exc, traceback)
+
+    async def frames(self) -> AsyncIterator[FramePayload]:
+        async for payload in self._source.frames():
+            await asyncio.to_thread(self._dump_frame, payload)
+            yield payload
+
+    def _dump_frame(self, payload: FramePayload) -> None:
+        path = self._directory / f"{time.time_ns()}.jpg"
+        try:
+            data = base64.b64decode(payload["data"], validate=True)
+            path.write_bytes(data)
+        except Exception:  # pragma: no cover - best-effort logging
+            LOGGER.exception("Failed to dump frame to %s", path)
+
+
 @dataclass(frozen=True)
 class FrameSourceSpec:
     """Container describing how to instantiate a frame source."""
@@ -237,34 +292,22 @@ class FrameSourceSpec:
     camera_index: int
     monitor_index: int
 
+    def build(self) -> "FrameSource":
+        if self.mode is CaptureMode.CAMERA:
+            return CameraFrameSource(
+                camera_index=self.camera_index,
+                fps=self.fps,
+                max_dimension=self.max_dimension,
+                jpeg_quality=self.jpeg_quality,
+            )
 
-def create_frame_source(spec: FrameSourceSpec) -> FrameSource:
-    """Factory producing a concrete frame source based on the provided spec."""
+        if self.mode is CaptureMode.SCREEN:
+            return ScreenFrameSource(
+                monitor_index=self.monitor_index,
+                fps=self.fps,
+                max_dimension=self.max_dimension,
+                jpeg_quality=self.jpeg_quality,
+            )
 
-    if spec.mode is CaptureMode.CAMERA:
-        return CameraFrameSource(
-            camera_index=spec.camera_index,
-            fps=spec.fps,
-            max_dimension=spec.max_dimension,
-            jpeg_quality=spec.jpeg_quality,
-        )
-
-    if spec.mode is CaptureMode.SCREEN:
-        return ScreenFrameSource(
-            monitor_index=spec.monitor_index,
-            fps=spec.fps,
-            max_dimension=spec.max_dimension,
-            jpeg_quality=spec.jpeg_quality,
-        )
-
-    msg = f"Unsupported capture mode: {spec.mode}"
-    raise ValueError(msg)
-
-
-__all__ = [
-    "CaptureMode",
-    "FramePayload",
-    "FrameSource",
-    "FrameSourceSpec",
-    "create_frame_source",
-]
+        msg = f"Unsupported capture mode: {self.mode}"
+        raise ValueError(msg)

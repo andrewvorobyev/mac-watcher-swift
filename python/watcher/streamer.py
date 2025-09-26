@@ -105,7 +105,22 @@ class SequentialStreamer(Streamer):
             )
 
         while True:
-            payload = self._pull_latest_frame()
+            payload = await self._pull_latest_frame()
+            if payload is None:
+                return
+            
+            await session.send_client_content(
+                turns=[
+                    {
+                        "role": "user",
+                        "parts": [
+                            {"inline_data": payload},  # type: ignore
+                            {"text": "describe the changes"}
+                        ]
+                    }
+                ],
+                turn_complete=True,
+            )
 
     async def _enqueue_frames(self, source: FrameSource) -> None:
         try:
@@ -115,27 +130,25 @@ class SequentialStreamer(Streamer):
             await asyncio.shield(self.frame_q.put(None))
 
     async def _pull_latest_frame(self) -> FramePayload | None:
-        item = await self.frame_q.get()
-        if item is None:
-            return None
-
-        latest = item
         sentinel_seen = False
+        latest: FramePayload | None = None
+
+        while latest is None:
+            item = await self.frame_q.get()
+            if item is None:
+                return None
+            latest = item
 
         while True:
             try:
                 item = self.frame_q.get_nowait()
             except asyncio.QueueEmpty:
-                break
+                if sentinel_seen:
+                    await asyncio.shield(self.frame_q.put(None))
+                return latest
 
             if item is None:
                 sentinel_seen = True
                 continue
 
             latest = item
-
-        if sentinel_seen:
-            await asyncio.shield(self.frame_q.put(None))
-
-        return latest
-

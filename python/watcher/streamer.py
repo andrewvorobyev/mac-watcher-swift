@@ -32,7 +32,12 @@ class StreamerOptions:
     config: LiveConnectConfigDict
     model_instructions: str | None = None
 
-    def build(self) -> "Streamer": ...
+    def build(self) -> "Streamer":
+        match self.mode:
+            case LiveApiMode.REALTIME:
+                return RealtimeStreamer(self)
+            case LiveApiMode.SEQUENTIAL:
+                return SequentialStreamer(self)
 
 
 @dataclass(frozen=True)

@@ -10,7 +10,7 @@ from google.genai.types import LiveConnectConfigDict, Modality
 
 from watcher import tools
 from watcher.frames import CaptureMode, FrameSourceSpec
-from watcher.streamer import GeminiRealtimeStreamer, LiveApiMode, StreamerOptions
+from watcher.streamer import LiveApiMode, StreamerOptions
 from watcher.utils import OUT_PATH, PROMPTS_PATH
 
 LOGGER = logging.getLogger(__name__)
@@ -31,19 +31,16 @@ async def main() -> None:
     model = "gemini-live-2.5-flash-preview"  # Half-cascade audio (https://ai.google.dev/gemini-api/docs/live)
     prompt = (PROMPTS_PATH / "system.md").read_text()
 
-    client = genai.Client()
-
-    streamer_opts = StreamerOptions(
+    streamer = StreamerOptions(
+        client = genai.Client(),
+        mode=LiveApiMode.REALTIME,
         model=model,
         config=LiveConnectConfigDict(
             response_modalities=[Modality.TEXT], tools=[tools.report_activity]
         ),
-        initial_text=prompt,
-        frame_dump_dir=OUT_PATH,
-        api_mode=LiveApiMode.REALTIME,
-    )
+        model_instructions=prompt
+    ).build()
 
-    streamer = GeminiRealtimeStreamer(client=client, options=streamer_opts)
     await streamer.stream(frame_source)
 
 

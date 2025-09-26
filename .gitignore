@@ -23,4 +23,4 @@ rust-watcher/output
 # python
 
 __pycache__
-
+python/output

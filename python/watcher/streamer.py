@@ -14,7 +14,23 @@ from google.genai.types import LiveConnectConfigDict
 from watcher.frames import FramePayload, FrameSource
 from watcher.live_session import LiveSession
 
+from typing import Protocol
+
 LOGGER = logging.getLogger(__name__)
+
+
+class Streamer(Protocol):
+    async def stream(self, source: FrameSource) -> None:
+        ...
+
+
+@dataclass(frozen=True)
+class RealtimeStreamer(Streamer):
+    model: str
+    instructions: str | None = None
+
+    async def stream(self, source: FrameSource) -> None:
+        ...
 
 
 class LiveApiMode(StrEnum):
@@ -68,7 +84,9 @@ class GeminiRealtimeStreamer:
                 match self._options.api_mode:
                     case LiveApiMode.REALTIME:
                         await session.send_realtime_input(media=payload)
+                        LOGGER.info("realtime input sent")
                     case LiveApiMode.SEQUENTIAL:
+                        LOGGER.info("sequential input sent")
                         turns = [{"role": "user", "parts": [{"inline_data": payload}]}]
                         await session.send_client_content(
                             turns=turns, turn_complete=True

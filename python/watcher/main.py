@@ -37,7 +37,7 @@ async def main() -> None:
         ),
         initial_text=prompt,
         frame_dump_dir=OUT_PATH,
-        api_mode=LiveApiMode.SEQUENTIAL,
+        api_mode=LiveApiMode.REALTIME,
     )
 
     client = genai.Client()

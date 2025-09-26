@@ -48,6 +48,7 @@ class LiveSession(Protocol):
                 Sequence[FunctionResponseOrDict],
             ]
         ] = None,
+        end_of_turn: Optional[bool] = False,
     ) -> None:
         """Dispatch a payload to the Gemini realtime session."""
         raise NotImplementedError
@@ -87,7 +88,7 @@ class GeminiRealtimeStreamer:
         try:
             async for payload in source.frames():
                 await session.send(input=payload)
-                await session.send(input={"role": "user", "parts": [{"text": "describe"}]})
+                # await session.send(input={"role": "user", "parts": [{"text": "describe"}]})
                 LOGGER.info("Frame sent")
         except asyncio.CancelledError:
             raise

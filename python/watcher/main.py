@@ -26,7 +26,7 @@ FRAME_SOURCE_SPEC = FrameSourceSpec(
 )
 
 MODEL_ID = "models/gemini-2.0-flash-live-001"
-INITIAL_PROMPT: str | None = "Output short description of what you see on the screen"
+INITIAL_PROMPT: str | None = "Output short description of what you see on the screen."
 
 
 async def run_async() -> None:

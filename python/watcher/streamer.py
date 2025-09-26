@@ -5,16 +5,23 @@ from __future__ import annotations
 import asyncio
 import logging
 from dataclasses import dataclass
-from typing import Any, AsyncIterator, Protocol
+from typing import Any, AsyncIterator, Optional, Protocol, Sequence, Union
 
 from google import genai
-from google.genai.types import LiveConnectConfigDict
+from google.genai.types import (
+    LiveConnectConfigDict,
+    ContentListUnion,
+    ContentListUnionDict,
+    LiveClientContentOrDict,
+    LiveClientRealtimeInputOrDict,
+    LiveClientToolResponseOrDict,
+    FunctionResponseOrDict,
+)
 
 from watcher.frames import FrameSource
 
 
 LOGGER = logging.getLogger(__name__)
-
 
 
 @dataclass(slots=True)
@@ -27,7 +34,21 @@ class StreamerOptions:
 
 
 class LiveSession(Protocol):
-    async def send(self, *, input: object, end_of_turn: bool | None = None) -> None:
+    async def send(
+        self,
+        *,
+        input: Optional[
+            Union[
+                ContentListUnion,
+                ContentListUnionDict,
+                LiveClientContentOrDict,
+                LiveClientRealtimeInputOrDict,
+                LiveClientToolResponseOrDict,
+                FunctionResponseOrDict,
+                Sequence[FunctionResponseOrDict],
+            ]
+        ] = None,
+    ) -> None:
         """Dispatch a payload to the Gemini realtime session."""
         raise NotImplementedError
 
@@ -50,16 +71,24 @@ class GeminiRealtimeStreamer:
                 config=self._options.config,
             ) as session:
                 if self._options.initial_text:
-                    await session.send(input=self._options.initial_text, end_of_turn=True)
+                    await session.send(
+                        input=self._options.initial_text, end_of_turn=True
+                    )
 
                 async with asyncio.TaskGroup() as group:
-                    group.create_task(self._forward_frames(session, source)) # pyright: ignore[reportArgumentType]
-                    group.create_task(self._consume_responses(session)) # pyright: ignore[reportArgumentType]
+                    group.create_task(
+                        self._forward_frames(session, source)
+                    )  # pyright: ignore[reportArgumentType]
+                    group.create_task(
+                        self._consume_responses(session)
+                    )  # pyright: ignore[reportArgumentType]
 
     async def _forward_frames(self, session: LiveSession, source: FrameSource) -> None:
         try:
             async for payload in source.frames():
                 await session.send(input=payload)
+                await session.send(input={"role": "user", "parts": [{"text": "describe"}]})
+                LOGGER.info("Frame sent")
         except asyncio.CancelledError:
             raise
 
@@ -79,4 +108,3 @@ __all__ = [
     "GeminiRealtimeStreamer",
     "StreamerOptions",
 ]
-

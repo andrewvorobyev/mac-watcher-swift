@@ -2,14 +2,14 @@
 
 import asyncio
 import logging
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from enum import StrEnum
 from typing import Protocol
 
 from google import genai
 from google.genai.types import LiveConnectConfigDict
 
-from watcher.frames import FrameSource
+from watcher.frames import FramePayload, FrameSource
 from watcher.live_session import LiveSession
 
 LOGGER = logging.getLogger(__name__)
@@ -80,6 +80,7 @@ class RealtimeStreamer(Streamer):
 @dataclass(frozen=True)
 class SequentialStreamer(Streamer):
     opts: StreamerOptions
+    frame_q: asyncio.Queue[FramePayload] = field(default_factory=asyncio.Queue)
 
     async def stream(self, source: FrameSource) -> None:
         async with source:
@@ -103,3 +104,5 @@ class SequentialStreamer(Streamer):
                         turns=[{"role": "user", "parts": [{"inline_data": payload}]}],
                         turn_complete=True,
                     )
+                
+

@@ -33,7 +33,7 @@ async def main() -> None:
 
     streamer = StreamerOptions(
         client = genai.Client(),
-        mode=LiveApiMode.REALTIME,
+        mode=LiveApiMode.SEQUENTIAL,
         model=model,
         config=LiveConnectConfigDict(
             response_modalities=[Modality.TEXT], tools=[tools.report_activity]

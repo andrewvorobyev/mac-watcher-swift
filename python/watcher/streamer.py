@@ -55,10 +55,7 @@ class GeminiRealtimeStreamer:
     async def _forward_frames(self, session: LiveSession, source: FrameSource) -> None:
         try:
             async for payload in source.frames():
-                await session.send(input=payload)
-                turns = [{"role": "user", "parts": [{"text": "Describe the screen briefly"}]}]
-                await session.send_client_content(turns=turns, turn_complete=True)
-                LOGGER.info("Frame sent")
+                await session.send_realtime_input(media=payload)
                 if self._options.frame_dump_dir is not None:
                     await asyncio.to_thread(self._dump_frame, payload)
         except asyncio.CancelledError:

@@ -5,9 +5,11 @@ import shutil
 REPO_ROOT = Path(__file__).parent.parent.resolve()
 assert (REPO_ROOT / "pyproject.toml").exists(), "sanity check"
 
-OUTPUT = REPO_ROOT / "output"
-if OUTPUT.exists():
-    shutil.rmtree(OUTPUT)
+OUT_PATH = REPO_ROOT / "output"
+if OUT_PATH.exists():
+    shutil.rmtree(OUT_PATH)
 
-OUTPUT.mkdir()
+OUT_PATH.mkdir()
 
+PROMPTS_PATH = (Path(__file__).parent / "prompts").resolve()
+assert PROMPTS_PATH.exists()

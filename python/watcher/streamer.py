@@ -10,7 +10,6 @@ from google.genai.types import LiveConnectConfigDict
 from watcher.frames import FrameSource
 from watcher.live_session import LiveSession
 
-
 LOGGER = logging.getLogger(__name__)
 
 
@@ -21,6 +20,7 @@ class StreamerOptions:
     model: str
     config: LiveConnectConfigDict
     initial_text: str | None = None
+
 
 class GeminiRealtimeStreamer:
     """Send frames from a source to Gemini Realtime and surface responses."""
@@ -41,18 +41,13 @@ class GeminiRealtimeStreamer:
                     )
 
                 async with asyncio.TaskGroup() as group:
-                    group.create_task(
-                        self._forward_frames(session, source)
-                    )
-                    group.create_task(
-                        self._consume_responses(session)
-                    )
+                    group.create_task(self._forward_frames(session, source))
+                    group.create_task(self._consume_responses(session))
 
     async def _forward_frames(self, session: LiveSession, source: FrameSource) -> None:
         try:
             async for payload in source.frames():
                 await session.send(input=payload)
-                # await session.send(input={"role": "user", "parts": [{"text": "describe"}]})
                 LOGGER.info("Frame sent")
         except asyncio.CancelledError:
             raise

@@ -7,11 +7,9 @@ import logging
 
 from google import genai
 from google.genai.types import LiveConnectConfigDict
+
 from watcher.frames import CaptureMode, FrameSourceSpec, create_frame_source
 from watcher.streamer import GeminiRealtimeStreamer, StreamerOptions
-
-import os
-
 
 LOGGER = logging.getLogger(__name__)
 

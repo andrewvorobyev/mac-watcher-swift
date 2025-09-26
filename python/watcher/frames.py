@@ -15,7 +15,6 @@ import mss
 import numpy as np
 import numpy.typing as npt
 
-
 LOGGER = logging.getLogger(__name__)
 
 
@@ -177,7 +176,7 @@ class CameraFrameSource(FrameSource):
         if not ret:
             LOGGER.warning("Camera returned no frame; ending stream.")
             return None
-        return frame # type: ignore
+        return frame  # type: ignore
 
 
 class ScreenFrameSource(FrameSource):

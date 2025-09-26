@@ -39,10 +39,10 @@ class LiveSession(Protocol):
     async def send_realtime_input(
         self,
         *,
-        media: Optional[types.BlobImageUnionDict] = None, # pyright: ignore[reportInvalidTypeForm]
+        media: Optional[types.BlobImageUnionDict] = None,  # pyright: ignore[reportInvalidTypeForm]
         audio: Optional[types.BlobOrDict] = None,
         audio_stream_end: Optional[bool] = None,
-        video: Optional[types.BlobImageUnionDict] = None, # pyright: ignore[reportInvalidTypeForm]
+        video: Optional[types.BlobImageUnionDict] = None,  # pyright: ignore[reportInvalidTypeForm]
         text: Optional[str] = None,
         activity_start: Optional[types.ActivityStartOrDict] = None,
         activity_end: Optional[types.ActivityEndOrDict] = None,

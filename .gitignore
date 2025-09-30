@@ -20,6 +20,9 @@ chrome-dev-tools-mcp/target
 rust-watcher/target
 rust-watcher/output
 
+rust/target
+rust/output
+
 # python
 
 __pycache__

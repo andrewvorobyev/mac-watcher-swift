@@ -486,27 +486,37 @@ pub enum ClientMessage {
 }
 
 /// Session setup payload as required by the first message on a live session.
-#[derive(Debug, Serialize, Deserialize, Clone, Default)]
+#[derive(Debug, Serialize, Deserialize, Clone, Default, Builder)]
 #[serde(rename_all = "camelCase")]
+#[builder(pattern = "owned")]
 pub struct Setup {
     pub model: String,
     #[serde(skip_serializing_if = "Option::is_none")]
+    #[builder(setter(strip_option), default)]
     pub generation_config: Option<GenerationConfig>,
     #[serde(skip_serializing_if = "Option::is_none")]
+    #[builder(setter(strip_option), default)]
     pub system_instruction: Option<Content>,
     #[serde(skip_serializing_if = "Option::is_none")]
+    #[builder(setter(strip_option), default)]
     pub tools: Option<Vec<Value>>,
     #[serde(skip_serializing_if = "Option::is_none")]
+    #[builder(setter(strip_option), default)]
     pub realtime_input_config: Option<Value>,
     #[serde(skip_serializing_if = "Option::is_none")]
+    #[builder(setter(strip_option), default)]
     pub session_resumption: Option<Value>,
     #[serde(skip_serializing_if = "Option::is_none")]
+    #[builder(setter(strip_option), default)]
     pub context_window_compression: Option<Value>,
     #[serde(skip_serializing_if = "Option::is_none")]
+    #[builder(setter(strip_option), default)]
     pub input_audio_transcription: Option<Value>,
     #[serde(skip_serializing_if = "Option::is_none")]
+    #[builder(setter(strip_option), default)]
     pub output_audio_transcription: Option<Value>,
     #[serde(skip_serializing_if = "Option::is_none")]
+    #[builder(setter(strip_option), default)]
     pub proactivity: Option<Value>,
 }
 
@@ -517,6 +527,11 @@ impl Setup {
             model: model.into(),
             ..Default::default()
         }
+    }
+
+    /// Returns a builder pre-populated with the required model field.
+    pub fn builder(model: impl Into<String>) -> SetupBuilder {
+        SetupBuilder::default().model(model.into())
     }
 }
 

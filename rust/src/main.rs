@@ -3,7 +3,8 @@ mod gemini;
 use std::time::Duration;
 
 use crate::gemini::{
-    ConnectionOptions, Content, GeminiSession, Part, ServerEvent, Setup, ToolResponse,
+    ConnectionOptions, Content, GeminiSession, GenerationConfig, Part, ServerEvent, Setup,
+    ToolResponse,
 };
 use tokio::time::sleep;
 
@@ -18,6 +19,10 @@ async fn main() -> gemini::Result<()> {
     setup.system_instruction = Some(Content::system(
         "You are a Rust sample app demonstrating the Gemini Live API.",
     ));
+    setup.generation_config = Some(GenerationConfig {
+        response_modalities: vec!["TEXT".to_string()],
+        ..Default::default()
+    });
 
     let session = GeminiSession::connect(setup, options).await?;
     let sender = session.sender_handle();

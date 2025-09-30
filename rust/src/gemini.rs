@@ -206,10 +206,8 @@ impl GeminiSession {
 
     /// Sends a `clientContent` message.
     pub async fn send_client_content(&self, content: ClientContent) -> Result<()> {
-        self.send_message(ClientMessage::ClientContent {
-            client_content: content,
-        })
-        .await
+        self.send_message(ClientMessage::ClientContent(content))
+            .await
     }
 
     /// Adds a helper to send a single text turn and optionally mark it as complete.
@@ -231,21 +229,17 @@ impl GeminiSession {
 
     /// Sends a `realtimeInput` message, useful for low-latency text or audio streaming.
     pub async fn send_realtime_text(&self, text: impl Into<String>) -> Result<()> {
-        self.send_message(ClientMessage::RealtimeInput {
-            realtime_input: RealtimeInput {
-                text: Some(text.into()),
-                ..Default::default()
-            },
-        })
+        self.send_message(ClientMessage::RealtimeInput(RealtimeInput {
+            text: Some(text.into()),
+            ..Default::default()
+        }))
         .await
     }
 
     /// Sends a tool response payload back to the model.
     pub async fn send_tool_response(&self, response: ToolResponse) -> Result<()> {
-        self.send_message(ClientMessage::ToolResponse {
-            tool_response: response,
-        })
-        .await
+        self.send_message(ClientMessage::ToolResponse(response))
+            .await
     }
 
     /// Receives the next server event, if the connection is still open.
@@ -345,10 +339,8 @@ impl GeminiSender {
     }
 
     pub async fn send_client_content(&self, content: ClientContent) -> Result<()> {
-        self.send_message(ClientMessage::ClientContent {
-            client_content: content,
-        })
-        .await
+        self.send_message(ClientMessage::ClientContent(content))
+            .await
     }
 
     pub async fn send_text_turn(
@@ -368,20 +360,16 @@ impl GeminiSender {
     }
 
     pub async fn send_realtime_text(&self, text: impl Into<String>) -> Result<()> {
-        self.send_message(ClientMessage::RealtimeInput {
-            realtime_input: RealtimeInput {
-                text: Some(text.into()),
-                ..Default::default()
-            },
-        })
+        self.send_message(ClientMessage::RealtimeInput(RealtimeInput {
+            text: Some(text.into()),
+            ..Default::default()
+        }))
         .await
     }
 
     pub async fn send_tool_response(&self, response: ToolResponse) -> Result<()> {
-        self.send_message(ClientMessage::ToolResponse {
-            tool_response: response,
-        })
-        .await
+        self.send_message(ClientMessage::ToolResponse(response))
+            .await
     }
 
     pub async fn close(&self) -> Result<()> {
@@ -498,11 +486,13 @@ fn parse_server_event(value: Value) -> Result<ServerEvent> {
 
 /// Represents any message a client can send to the Gemini live service.
 #[derive(Debug, Serialize, Clone)]
-#[serde(rename_all = "camelCase")]
 pub enum ClientMessage {
-    ClientContent { client_content: ClientContent },
-    RealtimeInput { realtime_input: RealtimeInput },
-    ToolResponse { tool_response: ToolResponse },
+    #[serde(rename = "clientContent")]
+    ClientContent(ClientContent),
+    #[serde(rename = "realtimeInput")]
+    RealtimeInput(RealtimeInput),
+    #[serde(rename = "toolResponse")]
+    ToolResponse(ToolResponse),
 }
 
 /// Session setup payload as required by the first message on a live session.

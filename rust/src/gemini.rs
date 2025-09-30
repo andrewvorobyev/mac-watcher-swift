@@ -10,6 +10,7 @@ use std::{
 };
 
 use base64::Engine as _;
+use derive_builder::Builder;
 use futures::{SinkExt, StreamExt};
 use http::{
     Request, StatusCode,
@@ -77,21 +78,23 @@ pub enum GeminiError {
 }
 
 /// Connection parameters for creating a Gemini live session.
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Builder)]
+#[builder(pattern = "owned")]
 pub struct ConnectionOptions {
+    #[builder(default = "Url::parse(DEFAULT_LIVE_ENDPOINT).expect(\"valid default endpoint\")")]
     endpoint: Url,
+    #[builder(setter(strip_option, into), default)]
     api_key: Option<String>,
+    #[builder(setter(strip_option, into), default)]
     access_token: Option<String>,
 }
 
 impl ConnectionOptions {
     /// Creates a new set of connection options pointing at the default live endpoint.
-    pub fn new() -> Result<Self> {
-        Ok(Self {
-            endpoint: Url::parse(DEFAULT_LIVE_ENDPOINT)?,
-            api_key: None,
-            access_token: None,
-        })
+    pub fn new() -> Self {
+        Self::builder()
+            .build()
+            .expect("builder defaults to produce valid connection options")
     }
 
     /// Returns the configured endpoint URL.
@@ -99,22 +102,9 @@ impl ConnectionOptions {
         &self.endpoint
     }
 
-    /// Overrides the WebSocket endpoint URL.
-    pub fn with_endpoint(mut self, endpoint: Url) -> Self {
-        self.endpoint = endpoint;
-        self
-    }
-
-    /// Adds an API key as a `key` query parameter.
-    pub fn with_api_key(mut self, key: impl Into<String>) -> Self {
-        self.api_key = Some(key.into());
-        self
-    }
-
-    /// Adds an access token as an `access_token` query parameter.
-    pub fn with_access_token(mut self, token: impl Into<String>) -> Self {
-        self.access_token = Some(token.into());
-        self
+    /// Returns a builder for customizing the connection options.
+    pub fn builder() -> ConnectionOptionsBuilder {
+        ConnectionOptionsBuilder::default()
     }
 
     fn build_request(&self) -> Result<Request<()>> {
@@ -869,6 +859,6 @@ pub struct SessionResumptionUpdate {
 
 impl Default for ConnectionOptions {
     fn default() -> Self {
-        ConnectionOptions::new().expect("default endpoint must be valid")
+        ConnectionOptions::new()
     }
 }

@@ -13,7 +13,13 @@ async fn main() -> gemini::Result<()> {
     let api_key =
         std::env::var("GOOGLE_API_KEY").expect("GOOGLE_API_KEY environment variable must be set");
 
-    let options = ConnectionOptions::new()?.with_api_key(api_key);
+    let mut options_builder = ConnectionOptions::builder().api_key(api_key);
+    if let Ok(token) = std::env::var("GEMINI_ACCESS_TOKEN") {
+        options_builder = options_builder.access_token(token);
+    }
+    let options = options_builder
+        .build()
+        .expect("connection options builder should set all fields");
 
     let mut setup = Setup::new("models/gemini-live-2.5-flash-preview");
     setup.system_instruction = Some(Content::system(

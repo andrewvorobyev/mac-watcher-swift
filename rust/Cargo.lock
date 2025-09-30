@@ -961,6 +961,7 @@ version = "0.1.0"
 dependencies = [
  "base64",
  "futures",
+ "http",
  "serde",
  "serde_json",
  "thiserror",

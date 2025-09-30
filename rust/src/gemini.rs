@@ -2,6 +2,7 @@
 
 use std::{
     collections::VecDeque,
+    fmt,
     sync::{
         Arc,
         atomic::{AtomicBool, Ordering},
@@ -10,8 +11,12 @@ use std::{
 
 use base64::Engine as _;
 use futures::{SinkExt, StreamExt};
+use http::{
+    Request, StatusCode,
+    header::{AUTHORIZATION, HeaderValue},
+};
 use serde::{Deserialize, Serialize};
-use serde_json::Value;
+use serde_json::{Value, json};
 use thiserror::Error;
 use tokio::{net::TcpStream, sync::Mutex};
 use tokio_tungstenite::{
@@ -40,6 +45,9 @@ pub enum GeminiError {
     #[error("failed to build websocket request: {0}")]
     RequestBuild(#[from] tungstenite::error::UrlError),
 
+    #[error("invalid header value: {0}")]
+    InvalidHeaderValue(#[from] http::header::InvalidHeaderValue),
+
     #[error("websocket protocol error: {0}")]
     WebSocket(#[from] tungstenite::Error),
 
@@ -57,6 +65,15 @@ pub enum GeminiError {
 
     #[error("unexpected server message: {0}")]
     UnexpectedServerMessage(Value),
+
+    #[error("server returned error: {0}")]
+    ServerError(ErrorResponse),
+
+    #[error("websocket handshake failed with status {0}")]
+    HandshakeStatus(StatusCode),
+
+    #[error("server closed the connection: code {code}, reason {reason}")]
+    ServerClosed { code: String, reason: String },
 }
 
 /// Connection parameters for creating a Gemini live session.
@@ -100,7 +117,7 @@ impl ConnectionOptions {
         self
     }
 
-    fn build_url(&self) -> Url {
+    fn build_request(&self) -> Result<Request<()>> {
         let mut url = self.endpoint.clone();
         {
             let mut pairs = url.query_pairs_mut();
@@ -111,7 +128,20 @@ impl ConnectionOptions {
                 pairs.append_pair("access_token", token);
             }
         }
-        url
+        let mut request: Request<()> = url.into_client_request()?;
+
+        if let Some(key) = &self.api_key {
+            let value = HeaderValue::from_str(key)?;
+            request.headers_mut().insert("X-Goog-Api-Key", value);
+        }
+
+        if let Some(token) = &self.access_token {
+            let bearer = format!("Bearer {}", token);
+            let value = HeaderValue::from_str(&bearer)?;
+            request.headers_mut().insert(AUTHORIZATION, value);
+        }
+
+        Ok(request)
     }
 }
 
@@ -140,9 +170,11 @@ async fn send_message_internal(
 impl GeminiSession {
     /// Opens a new WebSocket connection, sends the setup frame, and waits for acknowledgment.
     pub async fn connect(setup: Setup, options: ConnectionOptions) -> Result<Self> {
-        let url = options.build_url();
-        let request = url.into_client_request()?;
-        let (ws_stream, _) = connect_async(request).await?;
+        let request = options.build_request()?;
+        let (ws_stream, response) = connect_async(request).await?;
+        if response.status() != StatusCode::SWITCHING_PROTOCOLS {
+            return Err(GeminiError::HandshakeStatus(response.status()));
+        }
         let (sender, receiver) = ws_stream.split();
         let sender = Arc::new(Mutex::new(sender));
         let closed = Arc::new(AtomicBool::new(false));
@@ -238,13 +270,22 @@ impl GeminiSession {
     }
 
     async fn send_setup(&self, setup: Setup) -> Result<()> {
-        self.send_message(ClientMessage::Setup { setup }).await
+        if self.closed.load(Ordering::SeqCst) {
+            return Err(GeminiError::ConnectionClosed);
+        }
+        let payload = serde_json::to_string(&json!({ "setup": setup }))?;
+        let mut sender = self.sender.lock().await;
+        sender.send(Message::Text(payload)).await?;
+        Ok(())
     }
 
     async fn expect_setup_complete(&mut self) -> Result<()> {
         loop {
             match self.read_next_event().await? {
                 Some(ServerEvent::SetupComplete { .. }) => return Ok(()),
+                Some(ServerEvent::Error { error, .. }) => {
+                    return Err(GeminiError::ServerError(error));
+                }
                 Some(other) => self.pending.push_back(other),
                 None => return Err(GeminiError::SetupNotAcknowledged),
             }
@@ -274,8 +315,13 @@ impl GeminiSession {
                     sender.send(Message::Pong(payload)).await?;
                 }
                 Message::Pong(_) => {}
-                Message::Close(_) => {
+                Message::Close(frame) => {
                     self.closed.store(true, Ordering::SeqCst);
+                    if let Some(frame) = frame {
+                        let reason = frame.reason.to_string();
+                        let code = format!("{:?}", frame.code);
+                        return Err(GeminiError::ServerClosed { code, reason });
+                    }
                     return Ok(None);
                 }
                 Message::Frame(_) => {}
@@ -352,29 +398,39 @@ impl GeminiSender {
 }
 
 fn parse_server_event(value: Value) -> Result<ServerEvent> {
-    let object = match value {
+    let mut object = match value {
         Value::Object(map) => map,
         other => return Err(GeminiError::UnexpectedServerMessage(other)),
     };
 
-    let mut usage_metadata = None;
-    if let Some(raw) = object.get("usageMetadata") {
-        usage_metadata = Some(serde_json::from_value(raw.clone())?);
+    let usage_metadata = if let Some(raw) = object.remove("usageMetadata") {
+        Some(serde_json::from_value(raw)?)
+    } else {
+        None
+    };
+
+    if let Some(raw_error) = object.remove("error") {
+        let error: ErrorResponse = serde_json::from_value(raw_error)?;
+        return Ok(ServerEvent::Error {
+            usage_metadata,
+            error,
+        });
     }
 
-    let mut matched = Vec::new();
-    for key in [
+    let known_keys = [
         "setupComplete",
         "serverContent",
         "toolCall",
         "toolCallCancellation",
         "goAway",
         "sessionResumptionUpdate",
-    ] {
-        if object.contains_key(key) {
-            matched.push(key.to_string());
-        }
-    }
+    ];
+
+    let matched: Vec<String> = known_keys
+        .iter()
+        .filter(|key| object.contains_key(**key))
+        .map(|key| (*key).to_string())
+        .collect();
 
     if matched.len() > 1 {
         return Err(GeminiError::MultipleServerMessageTypes(matched));
@@ -384,12 +440,12 @@ fn parse_server_event(value: Value) -> Result<ServerEvent> {
         match kind.as_str() {
             "setupComplete" => {
                 serde_json::from_value::<SetupComplete>(
-                    object.get("setupComplete").cloned().unwrap_or(Value::Null),
+                    object.remove("setupComplete").unwrap_or(Value::Null),
                 )?;
                 Ok(ServerEvent::SetupComplete { usage_metadata })
             }
             "serverContent" => {
-                let payload = object.get("serverContent").cloned().unwrap_or(Value::Null);
+                let payload = object.remove("serverContent").unwrap_or(Value::Null);
                 let content: ServerContent = serde_json::from_value(payload)?;
                 Ok(ServerEvent::ServerContent {
                     usage_metadata,
@@ -397,7 +453,7 @@ fn parse_server_event(value: Value) -> Result<ServerEvent> {
                 })
             }
             "toolCall" => {
-                let payload = object.get("toolCall").cloned().unwrap_or(Value::Null);
+                let payload = object.remove("toolCall").unwrap_or(Value::Null);
                 let message: ToolCall = serde_json::from_value(payload)?;
                 Ok(ServerEvent::ToolCall {
                     usage_metadata,
@@ -405,10 +461,7 @@ fn parse_server_event(value: Value) -> Result<ServerEvent> {
                 })
             }
             "toolCallCancellation" => {
-                let payload = object
-                    .get("toolCallCancellation")
-                    .cloned()
-                    .unwrap_or(Value::Null);
+                let payload = object.remove("toolCallCancellation").unwrap_or(Value::Null);
                 let cancellation: ToolCallCancellation = serde_json::from_value(payload)?;
                 Ok(ServerEvent::ToolCallCancellation {
                     usage_metadata,
@@ -416,7 +469,7 @@ fn parse_server_event(value: Value) -> Result<ServerEvent> {
                 })
             }
             "goAway" => {
-                let payload = object.get("goAway").cloned().unwrap_or(Value::Null);
+                let payload = object.remove("goAway").unwrap_or(Value::Null);
                 let go_away: GoAway = serde_json::from_value(payload)?;
                 Ok(ServerEvent::GoAway {
                     usage_metadata,
@@ -425,8 +478,7 @@ fn parse_server_event(value: Value) -> Result<ServerEvent> {
             }
             "sessionResumptionUpdate" => {
                 let payload = object
-                    .get("sessionResumptionUpdate")
-                    .cloned()
+                    .remove("sessionResumptionUpdate")
                     .unwrap_or(Value::Null);
                 let update: SessionResumptionUpdate = serde_json::from_value(payload)?;
                 Ok(ServerEvent::SessionResumptionUpdate {
@@ -448,7 +500,6 @@ fn parse_server_event(value: Value) -> Result<ServerEvent> {
 #[derive(Debug, Serialize, Clone)]
 #[serde(rename_all = "camelCase")]
 pub enum ClientMessage {
-    Setup { setup: Setup },
     ClientContent { client_content: ClientContent },
     RealtimeInput { realtime_input: RealtimeInput },
     ToolResponse { tool_response: ToolResponse },
@@ -556,6 +607,41 @@ pub struct ActivitySignal {}
 pub struct ToolResponse {
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub function_responses: Vec<FunctionResponse>,
+}
+
+/// Standard error payload returned by the Gemini service.
+#[derive(Debug, Serialize, Deserialize, Clone, Default)]
+#[serde(rename_all = "camelCase")]
+pub struct ErrorResponse {
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub code: Option<i32>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub message: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub status: Option<String>,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub details: Vec<Value>,
+}
+
+impl fmt::Display for ErrorResponse {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match (&self.message, self.code, &self.status) {
+            (Some(message), Some(code), Some(status)) => {
+                write!(f, "{} (code {}, status {})", message, code, status)
+            }
+            (Some(message), Some(code), None) => write!(f, "{} (code {})", message, code),
+            (Some(message), None, Some(status)) => {
+                write!(f, "{} (status {})", message, status)
+            }
+            (Some(message), None, None) => write!(f, "{}", message),
+            (None, Some(code), Some(status)) => {
+                write!(f, "code {}, status {}", code, status)
+            }
+            (None, Some(code), None) => write!(f, "code {}", code),
+            (None, None, Some(status)) => write!(f, "status {}", status),
+            (None, None, None) => write!(f, "unknown error"),
+        }
+    }
 }
 
 /// Response to a single tool call.
@@ -675,6 +761,10 @@ pub enum ServerEvent {
     SessionResumptionUpdate {
         usage_metadata: Option<UsageMetadata>,
         update: SessionResumptionUpdate,
+    },
+    Error {
+        usage_metadata: Option<UsageMetadata>,
+        error: ErrorResponse,
     },
     Unknown {
         usage_metadata: Option<UsageMetadata>,

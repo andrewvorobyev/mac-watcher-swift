@@ -58,6 +58,9 @@ async fn main() -> gemini::Result<()> {
                         println!("[session resumable handle] {}", handle);
                     }
                 }
+                Ok(Some(ServerEvent::Error { error, .. })) => {
+                    eprintln!("server error: {}", error);
+                }
                 Ok(Some(ServerEvent::SetupComplete { .. })) => {}
                 Ok(Some(ServerEvent::Unknown { raw, .. })) => {
                     println!("[unknown message] {}", raw);

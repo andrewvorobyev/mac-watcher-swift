@@ -82,6 +82,22 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "2fd1289c04a9ea8cb22300a459a72a385d7c73d3259e2ed7dcb2af674838cfa9"
 
 [[package]]
+name = "core"
+version = "0.1.0"
+dependencies = [
+ "base64",
+ "derive_builder",
+ "futures",
+ "http",
+ "serde",
+ "serde_json",
+ "thiserror",
+ "tokio",
+ "tokio-tungstenite",
+ "url",
+]
+
+[[package]]
 name = "core-foundation"
 version = "0.9.4"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -1037,16 +1053,8 @@ checksum = "ccf3ec651a847eb01de73ccad15eb7d99f80485de043efb2f370cd654f4ea44b"
 name = "watcher"
 version = "0.1.0"
 dependencies = [
- "base64",
- "derive_builder",
- "futures",
- "http",
- "serde",
- "serde_json",
- "thiserror",
+ "core",
  "tokio",
- "tokio-tungstenite",
- "url",
 ]
 
 [[package]]

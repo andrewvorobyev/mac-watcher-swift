@@ -1,15 +1,13 @@
-mod gemini;
-
 use std::time::Duration;
 
-use crate::gemini::{
-    ConnectionOptions, Content, GeminiSession, GenerationConfig, Part, ServerEvent, Setup,
+use tokio::time::sleep;
+use watcher_core::{
+    ConnectionOptions, Content, GeminiSession, GenerationConfig, Part, Result, ServerEvent, Setup,
     ToolResponse,
 };
-use tokio::time::sleep;
 
 #[tokio::main]
-async fn main() -> gemini::Result<()> {
+async fn main() -> Result<()> {
     let api_key =
         std::env::var("GOOGLE_API_KEY").expect("GOOGLE_API_KEY environment variable must be set");
 

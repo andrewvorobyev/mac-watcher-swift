@@ -1,0 +1,8 @@
+[package]
+name = "watcher"
+version.workspace = true
+edition.workspace = true
+
+[dependencies]
+watcher_core = { package = "core", path = "../core" }
+tokio = { workspace = true }

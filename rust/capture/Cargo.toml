@@ -4,4 +4,6 @@ version.workspace = true
 edition.workspace = true
 
 [dependencies]
+scap = "0.1.0-beta.1"
+tokio = { workspace = true }
 watcher_core = { package = "core", path = "../core" }

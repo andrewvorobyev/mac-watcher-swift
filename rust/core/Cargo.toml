@@ -8,6 +8,9 @@ base64 = { workspace = true }
 derive_builder = { workspace = true }
 futures = { workspace = true }
 http = { workspace = true }
+image = "0.25"
+parking_lot = "0.12"
+scap = "0.1.0-beta.1"
 serde = { workspace = true }
 serde_json = { workspace = true }
 thiserror = { workspace = true }

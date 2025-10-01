@@ -4,6 +4,8 @@ version.workspace = true
 edition.workspace = true
 
 [dependencies]
+base64 = { workspace = true }
 scap = "0.1.0-beta.1"
+serde_json = { workspace = true }
 tokio = { workspace = true }
 watcher_core = { package = "core", path = "../core" }

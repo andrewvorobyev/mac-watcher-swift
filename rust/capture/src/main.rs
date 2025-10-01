@@ -5,6 +5,30 @@ use watcher_core::{encode_bgra_to_jpeg, ensure_clean_directory, FrameSource};
 async fn main() {
     println!("Starting screen capture example...");
 
+    // Check if platform is supported
+    if !scap::is_supported() {
+        eprintln!("❌ Platform not supported");
+        return;
+    }
+
+    // Check and request permission
+    if !scap::has_permission() {
+        println!("❌ Screen recording permission not granted.");
+        println!("📋 Please grant permission:");
+        println!("   1. Open System Settings");
+        println!("   2. Go to Privacy & Security → Screen Recording");
+        println!("   3. Enable permission for your Terminal app");
+        println!("   4. Restart your terminal and try again");
+
+        // Attempt to request permission (will open system dialog on some platforms)
+        if scap::request_permission() {
+            println!("✅ Permission granted!");
+        } else {
+            println!("❌ Permission denied or unavailable");
+            return;
+        }
+    }
+
     // Ensure output directory is clean
     ensure_clean_directory("output").expect("Failed to create output directory");
 
